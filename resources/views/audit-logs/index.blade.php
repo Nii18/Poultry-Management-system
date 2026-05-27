@@ -97,18 +97,18 @@
                             <td>{{ $log->created_at->format('M d, Y H:i:s') }}</td>
                             <td>{{ $log->user->name ?? 'Unknown' }}</td>
                             <td>
-                                <span class="badge bg-{{ $log->user_role === 'admin' ? 'danger' : ($log->user_role === 'manager' ? 'primary' : ($log->user_role === 'veterinarian' ? 'info' : ($log->user_role === 'accountant' ? 'warning' : 'secondary'))) }}-soft">
+                                <span class="badge bg-{{ $log->user_role === 'admin' ? 'danger' : ($log->user_role === 'manager' ? 'primary' : ($log->user_role === 'veterinarian' ? 'info' : ($log->user_role === 'accountant' ? 'warning' : 'secondary'))) }}">
                                     {{ ucfirst($log->user_role) }}
                                 </span>
                             </td>
                             <td>
-                                <span class="badge bg-secondary-soft">
+                                <span class="badge bg-secondary">
                                     {{ ucfirst(str_replace('_', ' ', $log->action)) }}
                                 </span>
                             </td>
                             <td>
                                 @if($log->entity_type)
-                                    <span class="badge bg-info-soft">
+                                    <span class="badge bg-info">
                                         {{ ucfirst(str_replace('_', ' ', $log->entity_type)) }}
                                     </span>
                                 @else
@@ -220,7 +220,7 @@ $(document).ready(function() {
             oldValuesHtml = `
                 <div class="mb-3">
                     <h6 class="fw-bold">Previous Values</h6>
-                    <div class="bg-light p-3 rounded" style="max-height: 200px; overflow-y: auto;">
+                    <div class="bg-tertiary p-3 rounded" style="max-height: 200px; overflow-y: auto;">
                         <pre class="mb-0 small">${JSON.stringify(log.old_values, null, 2)}</pre>
                     </div>
                 </div>
@@ -231,7 +231,7 @@ $(document).ready(function() {
             newValuesHtml = `
                 <div class="mb-3">
                     <h6 class="fw-bold">New Values</h6>
-                    <div class="bg-light p-3 rounded" style="max-height: 200px; overflow-y: auto;">
+                    <div class="bg-tertiary p-3 rounded" style="max-height: 200px; overflow-y: auto;">
                         <pre class="mb-0 small">${JSON.stringify(log.new_values, null, 2)}</pre>
                     </div>
                 </div>
@@ -279,7 +279,7 @@ $(document).ready(function() {
             
             <div class="detail-section">
                 <h6>Description</h6>
-                <div class="bg-light p-3 rounded">
+                <div class="bg-tertiary p-3 rounded">
                     ${escapeHtml(log.description)}
                 </div>
             </div>
@@ -301,3 +301,4 @@ $(document).ready(function() {
 });
 </script>
 @endpush
+@endsection

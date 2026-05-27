@@ -75,41 +75,43 @@ Route::prefix('species')->name('species.')->middleware(['role:admin,manager'])->
 
 
 Route::prefix('produces')->name('produces.')->group(function () {
- 
-    // Inventory summary - admin, manager, accountant
+    // Static/AJAX routes - must come BEFORE {id} routes
     Route::get('/inventory', [FarmProduceController::class, 'inventory'])
         ->name('inventory')
         ->middleware(['role:admin,manager,accountant']);
- 
-    // AJAX routes - must come BEFORE {id} routes
+    
     Route::get('/create-form', [FarmProduceController::class, 'getCreateForm'])
         ->name('create-form')
         ->middleware(['role:admin,manager,worker']);
- 
+    
     Route::post('/store-ajax', [FarmProduceController::class, 'storeProduceAjax'])
         ->name('store-ajax')
         ->middleware(['role:admin,manager,worker']);
- 
+    
     Route::get('/unit/{type}', [FarmProduceController::class, 'getDefaultUnit'])
         ->name('unit');
- 
+    
+    Route::get('/stat/{productType}', [FarmProduceController::class, 'getStatCardDetail'])
+        ->name('stat-detail');
+    
+    // Dynamic routes with {id} - place these AFTER static routes
     Route::get('/{id}/details-json', [FarmProduceController::class, 'getDetailsJson'])
         ->name('details-json')
         ->middleware(['role:admin,manager,accountant']);
- 
+    
     Route::get('/{id}/edit-data', [FarmProduceController::class, 'getEditData'])
         ->name('edit-data')
         ->middleware(['role:admin,manager']);
- 
+    
     Route::put('/{id}/update-ajax', [FarmProduceController::class, 'updateProduceAjax'])
         ->name('update-ajax')
         ->middleware(['role:admin,manager']);
- 
+    
     Route::delete('/{id}', [FarmProduceController::class, 'destroy'])
         ->name('destroy')
         ->middleware(['role:admin,manager,worker']);
- 
-    // Regular listing - admin, manager, worker can all see their entries
+    
+    // Index route LAST
     Route::get('/', [FarmProduceController::class, 'index'])
         ->name('index')
         ->middleware(['role:admin,manager,worker,accountant']);

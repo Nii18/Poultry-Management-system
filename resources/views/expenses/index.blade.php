@@ -227,7 +227,7 @@
                             <td>{{ $expense->vendor_name ?? 'N/A' }}</td>
                             <td>
                                 @if($expense->payment_method)
-                                    <span class="badge bg-light text-dark">
+                                    <span class="badge bg-success text-dark">
                                         <i class="fas {{ $expense->payment_method == 'cash' ? 'fa-money-bill' : ($expense->payment_method == 'bank_transfer' ? 'fa-university' : 'fa-credit-card') }} me-1"></i>
                                         {{ ucfirst(str_replace('_', ' ', $expense->payment_method)) }}
                                     </span>

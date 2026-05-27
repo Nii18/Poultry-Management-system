@@ -986,6 +986,14 @@
     .stat-mini-amber  { background: #fffbeb; border: 1px solid #fde68a; }
     .stat-section-title { font-size: .82rem; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; color: #64748b; }
     .progress { background-color: #e2e8f0; border-radius: 10px; }
+
+
+    label, .form-label, .modal-body, .modal-body p,
+    .detail-section p, .detail-value, .bg-light p,
+    .card-body, .card-body p { color:#1e293b !important; }
+    .modal-body .bg-light { background-color:#f1f5f9 !important; }
+    .form-control, .form-select { background-color:#ffffff !important;color:#1e293b !important; }
+    .form-control::placeholder { color:#94a3b8 !important; }
 </style>
 @endpush
 
@@ -1059,7 +1067,7 @@ document.addEventListener('DOMContentLoaded', function () {
             })
             .then(r => r.json())
             .then(data => {
-                if (data.success) displaySaleCreateForm(data.flocks);
+                if (data.success) displaySaleCreateForm(data.flocks, data.productTypes || []);
                 else document.getElementById('createSaleContent').innerHTML = `<div class="alert alert-danger m-3">Failed: ${data.message}</div>`;
             })
             .catch(e => { document.getElementById('createSaleContent').innerHTML = `<div class="alert alert-danger m-3">Error: ${e.message}</div>`; });
@@ -1073,22 +1081,33 @@ document.addEventListener('DOMContentLoaded', function () {
         document.body.style.overflow = ''; document.body.style.paddingRight = '';
     });
 
-    function displaySaleCreateForm(flocks) {
-        const fo = flocks.map(f => `<option value="${f.id}">${escapeHtml(f.flock_number)} - ${escapeHtml(f.breed_variety)}</option>`).join('');
-        document.getElementById('createSaleContent').innerHTML = `
-            <form id="createSaleForm"><div class="row">
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Product Type <span class="text-danger">*</span></label>
-                    <select name="product_type" class="form-select" required>
-                        <option value="">Select Product</option>
-                        <option value="eggs_tray">🥚 Eggs (Tray - 30 eggs)</option>
-                        <option value="eggs_crate">📦 Eggs (Crate - 12 trays)</option>
-                        <option value="eggs_box">📦 Eggs (Box - 360 eggs)</option>
-                        <option value="live_bird">🐓 Live Bird</option>
-                        <option value="meat_kg">🍗 Meat (per kg)</option>
-                        <option value="breeding_stock">🧬 Breeding Stock</option>
-                        <option value="manure">💩 Manure</option>
-                        <option value="other">📦 Other</option>
-                    </select></div>
+    function displaySaleCreateForm(flocks, productTypes) {
+    const fo = flocks.map(f =>
+        `<option value="${f.id}">${escapeHtml(f.flock_number)} - ${escapeHtml(f.breed_variety)}</option>`
+    ).join('');
+
+    // Build options from dynamic produce types
+    const ptOpts = productTypes.length > 0
+        ? productTypes.map(type => {
+            const label = type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
+            return `<option value="${type}">${label}</option>`;
+          }).join('')
+        : `<option value="" disabled>No produce types recorded yet — record produce first</option>`;
+
+    document.getElementById('createSaleContent').innerHTML = `
+        <form id="createSaleForm"><div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-semibold">Product Type <span class="text-danger">*</span></label>
+                <select name="product_type" class="form-select" required>
+                    <option value="">Select Product</option>
+                    ${ptOpts}
+                </select>
+                <small class="text-muted">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Only products recorded in Produce Inventory appear here.
+                    <a href="{{ route("produces.index") }}" target="_blank">Add a new product type →</a>
+                </small>
+            </div>
                 <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Sale Date <span class="text-danger">*</span></label>
                     <input type="date" name="sale_date" class="form-control" value="${new Date().toISOString().split('T')[0]}" required></div>
                 <div class="col-md-4 mb-3"><label class="form-label fw-semibold">Quantity <span class="text-danger">*</span></label>

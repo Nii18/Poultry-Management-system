@@ -83,39 +83,51 @@
           <i class="fa-solid fa-chevron-right submenu-arrow"></i>
         </a>
         <ul class="sidebar-submenu">
-          <li><a href="javascript:void(0)" onclick="redirectAndOpenModal('daily-logs.index', 'createLogModal')">Quick Log</a></li>
           <li><a href="{{ route('daily-logs.index') }}">All Logs</a></li>
+          <li><a href="javascript:void(0)" onclick="redirectAndOpenModal('daily-logs.index', 'createLogModal')">Quick Log</a></li>
           <li><a href="javascript:void(0)" onclick="redirectAndOpenModal('feed-issuances.index', 'createFeedIssuanceModal')">Feed Issuance</a></li>
         </ul>
       </li>
       @endif
       
-{{-- For workers + managers: record produce --}}
-@if(in_array(auth()->user()->role ?? '', ['admin','manager','worker']))
-<li class="sidebar-list">
+{{-- ==================== PRODUCE MANAGEMENT ==================== --}}
+@if(in_array(auth()->user()->role ?? '', ['admin','manager','worker','accountant']))
+<li class="sidebar-list has-submenu">
     <i class="fa-solid fa-thumbtack"></i>
-    <a class="sidebar-link" href="{{ route('produces.index') }}">
+
+    <a class="sidebar-link" href="javascript:void(0)">
         <svg class="stroke-icon">
             <use href="{{asset('assets/svg/iconly-sprite.svg#Bag')}}"></use>
         </svg>
-        <h6>Produce Records</h6>
+
+        <h6>Produce Management</h6>
+        <i class="fa-solid fa-chevron-right submenu-arrow"></i>
     </a>
+
+    <ul class="sidebar-submenu">
+
+        {{-- Workers/Admin/Managers can record produce --}}
+        @if(in_array(auth()->user()->role ?? '', ['admin','manager','worker']))
+        <li>
+            <a href="{{ route('produces.index') }}">
+                Produce Records
+            </a>
+        </li>
+        @endif
+
+        {{-- Inventory for finance/admin level --}}
+        @if(in_array(auth()->user()->role ?? '', ['admin','manager','accountant']))
+        <li>
+            <a href="{{ route('produces.inventory') }}">
+                Produce Inventory
+            </a>
+        </li>
+        @endif
+
+    </ul>
 </li>
 @endif
- 
-{{-- For admin, manager, accountant: inventory summary --}}
-@if(in_array(auth()->user()->role ?? '', ['admin','manager','accountant']))
-<li class="sidebar-list">
-    <i class="fa-solid fa-thumbtack"></i>
-    <a class="sidebar-link" href="{{ route('produces.inventory') }}">
-        <svg class="stroke-icon">
-            <use href="{{asset('assets/svg/iconly-sprite.svg#Chart')}}"></use>
-        </svg>
-        <h6>Produce Inventory</h6>
-    </a>
-</li>
-@endif
-      
+
 
       <!-- Feed Management (Admin & Manager only) -->
       @if(in_array(auth()->user()->role ?? '', ['admin','manager']))
@@ -475,6 +487,8 @@
 .dropdown-notification-item.unread:hover {
     background-color: #e0f2fe;
 }
+
+
 </style>
 
 <script>

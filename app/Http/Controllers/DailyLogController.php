@@ -17,14 +17,31 @@ use Carbon\Carbon;
 
 class DailyLogController extends Controller
 {
+    // ── Species group constants ──────────────────────────────────────────────
+    const POULTRY = ['CH', 'QU', 'DK', 'GS', 'TK'];
+    const DAIRY   = ['CT', 'GT', 'SH', 'BF'];
+    const MEAT    = ['RB', 'PG'];
+
     /**
      * Display a listing of daily logs
      */
     public function index(Request $request)
     {
         $flockId   = $request->get('flock_id');
-        $startDate = $request->get('start_date', Carbon::now()->subDays(30));
-        $endDate   = $request->get('end_date',   Carbon::now());
+        $startDate = $request->get('start_date');
+        $endDate   = $request->get('end_date');
+
+        if ($startDate) {
+            $startDate = Carbon::parse($startDate);
+        } else {
+            $startDate = Carbon::now()->subDays(30);
+        }
+
+        if ($endDate) {
+            $endDate = Carbon::parse($endDate);
+        } else {
+            $endDate = Carbon::now();
+        }
 
         $query = DailyLog::with(['flock.species', 'creator']);
 
@@ -88,13 +105,17 @@ class DailyLogController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return back()->withErrors($validator)->withInput();
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first()
+            ], 422);
         }
 
         DB::beginTransaction();
 
         try {
-            $flock = Flock::find($request->flock_id);
+            $flock       = Flock::with('species')->find($request->flock_id);
+            $speciesCode = $flock->species->code ?? '';
 
             // Prevent duplicate log for the same flock/date
             $existingLog = DailyLog::where('flock_id', $request->flock_id)
@@ -102,23 +123,30 @@ class DailyLogController extends Controller
                 ->first();
 
             if ($existingLog) {
-                return back()->with('error', 'A log already exists for this date. Please edit the existing log.');
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A log already exists for this date. Please edit the existing log.'
+                ], 422);
             }
+
+            // ── Map the generic production fields into the right columns ──
+            [$eggsCollected, $eggsDamaged, $speciesMetrics] =
+                $this->resolveProductionFields($request, $speciesCode);
 
             $totalLoss = ($request->mortality_count ?? 0) + ($request->culling_count ?? 0);
 
-            // Create the log
             $log = DailyLog::create([
                 'flock_id'                 => $request->flock_id,
                 'log_date'                 => $request->log_date,
                 'mortality_count'          => $request->mortality_count          ?? 0,
                 'culling_count'            => $request->culling_count            ?? 0,
-                'eggs_collected'           => $request->eggs_collected           ?? 0,
-                'eggs_damaged'             => $request->eggs_damaged             ?? 0,
+                'eggs_collected'           => $eggsCollected,
+                'eggs_damaged'             => $eggsDamaged,
                 'feed_intake_kg'           => $request->feed_intake_kg,
                 'water_consumption_liters' => $request->water_consumption_liters,
                 'average_weight_kg'        => $request->average_weight_kg,
-                'species_metrics'          => $request->species_metrics,
+                'species_metrics'          => $speciesMetrics ?: null,
                 'min_temperature_c'        => $request->min_temperature_c,
                 'max_temperature_c'        => $request->max_temperature_c,
                 'min_humidity'             => $request->min_humidity,
@@ -133,20 +161,8 @@ class DailyLogController extends Controller
                 'current_count' => $flock->current_count - $totalLoss,
             ]);
 
-            // Auto-record egg produce if eggs were collected
-            if (($request->eggs_collected ?? 0) > 0) {
-                FarmProduce::create([
-                    'flock_id'     => $flock->id,
-                    'product_type' => 'eggs',
-                    'quantity'     => $request->eggs_collected,
-                    'unit'         => 'pieces',
-                    'produce_date' => $request->log_date,
-                    'notes'        => ($request->eggs_damaged ?? 0) > 0
-                                        ? "Auto-recorded from daily log. Damaged: {$request->eggs_damaged}"
-                                        : 'Auto-recorded from daily log',
-                    'created_by'   => auth()->id(),
-                ]);
-            }
+            // Sync with FarmProduce
+            $this->syncFarmProduceFromDailyLog($log, $flock);
 
             // Audit trail
             AuditHelper::log(
@@ -163,11 +179,27 @@ class DailyLogController extends Controller
 
             DB::commit();
 
-            return redirect()->route('daily-logs.show', $log)
+            if ($request->ajax()) {
+                return response()->json([
+                    'success'  => true,
+                    'message'  => 'Daily log saved successfully',
+                    'redirect' => route('daily-logs.index')
+                ]);
+            }
+
+            return redirect()->route('daily-logs.index')
                 ->with('success', 'Daily log saved successfully');
 
         } catch (\Exception $e) {
             DB::rollBack();
+
+            if ($request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to save daily log: ' . $e->getMessage()
+                ], 500);
+            }
+
             return back()->with('error', 'Failed to save daily log: ' . $e->getMessage());
         }
     }
@@ -219,10 +251,13 @@ class DailyLogController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return back()->withErrors($validator)->withInput();
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first()
+            ], 422);
         }
 
-        $dailyLog = DailyLog::findOrFail($id);
+        $dailyLog = DailyLog::with('flock.species')->findOrFail($id);
 
         DB::beginTransaction();
 
@@ -232,16 +267,22 @@ class DailyLogController extends Controller
             $newTotalLoss = ($request->mortality_count ?? 0) + ($request->culling_count ?? 0);
             $lossDiff     = $newTotalLoss - $oldTotalLoss;
 
-            // Update the log
+            $flock       = $dailyLog->flock;
+            $speciesCode = $flock->species->code ?? '';
+
+            // ── Map the generic production fields into the right columns ──
+            [$eggsCollected, $eggsDamaged, $speciesMetrics] =
+                $this->resolveProductionFields($request, $speciesCode);
+
             $dailyLog->update([
                 'mortality_count'          => $request->mortality_count          ?? 0,
                 'culling_count'            => $request->culling_count            ?? 0,
-                'eggs_collected'           => $request->eggs_collected           ?? 0,
-                'eggs_damaged'             => $request->eggs_damaged             ?? 0,
+                'eggs_collected'           => $eggsCollected,
+                'eggs_damaged'             => $eggsDamaged,
                 'feed_intake_kg'           => $request->feed_intake_kg,
                 'water_consumption_liters' => $request->water_consumption_liters,
                 'average_weight_kg'        => $request->average_weight_kg,
-                'species_metrics'          => $request->species_metrics,
+                'species_metrics'          => $speciesMetrics ?: null,
                 'min_temperature_c'        => $request->min_temperature_c,
                 'max_temperature_c'        => $request->max_temperature_c,
                 'min_humidity'             => $request->min_humidity,
@@ -252,19 +293,21 @@ class DailyLogController extends Controller
 
             // Adjust flock count if mortality/culling changed
             if ($lossDiff !== 0) {
-                $flock = $dailyLog->flock;
                 $flock->update([
                     'current_count' => $flock->current_count - $lossDiff,
                 ]);
             }
 
-            // Sync egg produce record with the updated log
-            $this->syncEggProduce($dailyLog, $request);
+            // Reload to get updated attributes for sync
+            $dailyLog->refresh();
+
+            // Sync with FarmProduce
+            $this->syncFarmProduceFromDailyLog($dailyLog, $flock);
 
             // Audit trail
             AuditHelper::log(
                 'update',
-                "Updated daily log for flock #{$dailyLog->flock->flock_number} on {$dailyLog->log_date}",
+                "Updated daily log for flock #{$flock->flock_number} on {$dailyLog->log_date}",
                 'daily_log',
                 $dailyLog->id,
                 $oldValues,
@@ -273,11 +316,27 @@ class DailyLogController extends Controller
 
             DB::commit();
 
+            if ($request->ajax()) {
+                return response()->json([
+                    'success'  => true,
+                    'message'  => 'Daily log updated successfully',
+                    'redirect' => route('daily-logs.index')
+                ]);
+            }
+
             return redirect()->route('daily-logs.index')
                 ->with('success', 'Daily log updated successfully');
 
         } catch (\Exception $e) {
             DB::rollBack();
+
+            if ($request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to update daily log: ' . $e->getMessage()
+                ], 500);
+            }
+
             return back()->with('error', 'Failed to update daily log: ' . $e->getMessage());
         }
     }
@@ -287,27 +346,30 @@ class DailyLogController extends Controller
      */
     public function destroy($id)
     {
-        $dailyLog = DailyLog::findOrFail($id);
-
-        DB::beginTransaction();
-
         try {
-            $flockNumber = $dailyLog->flock->flock_number ?? 'Unknown';
+            $dailyLog = DailyLog::with('flock.species')->findOrFail($id);
+
+            DB::beginTransaction();
+
+            $flock       = $dailyLog->flock;
+            $flockNumber = $flock->flock_number ?? 'Unknown';
             $logDate     = $dailyLog->log_date;
+            $speciesCode = $flock->species->code ?? '';
 
             // Restore flock count
             $totalLoss = $dailyLog->mortality_count + $dailyLog->culling_count;
-            $flock     = $dailyLog->flock;
             $flock->update([
                 'current_count' => $flock->current_count + $totalLoss,
             ]);
 
-            // Remove the auto-created egg produce record if it exists
-            FarmProduce::where('flock_id', $dailyLog->flock_id)
-                ->where('product_type', 'eggs')
-                ->whereDate('produce_date', $dailyLog->log_date)
-                ->where('notes', 'like', '%Auto-recorded from daily log%')
-                ->delete();
+            // Delete the matching FarmProduce record for this species' product type
+            $productType = $this->getProductTypeForSpecies($speciesCode);
+            if ($productType) {
+                FarmProduce::where('flock_id', $dailyLog->flock_id)
+                    ->where('product_type', $productType)
+                    ->whereDate('produce_date', $dailyLog->log_date)
+                    ->delete();
+            }
 
             // Audit trail
             AuditHelper::log(
@@ -323,31 +385,89 @@ class DailyLogController extends Controller
 
             DB::commit();
 
-            return redirect()->route('daily-logs.index')
-                ->with('success', 'Daily log deleted successfully');
+            return response()->json([
+                'success' => true,
+                'message' => 'Daily log deleted successfully'
+            ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Failed to delete daily log: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete daily log: ' . $e->getMessage()
+            ], 500);
         }
     }
 
     /**
-     * Get log details as JSON for modal
+     * Get log details as JSON for modal (view + edit).
+     * Returns species_code and a normalised production block.
+     * Raw numeric values are returned so the edit form inputs are pre-filled correctly.
      */
     public function getLogJson($id)
     {
         try {
             $log = DailyLog::with(['flock.species', 'creator'])->findOrFail($id);
 
-            $totalLoss    = $log->mortality_count + $log->culling_count;
+            $totalLoss     = $log->mortality_count + $log->culling_count;
             $mortalityRate = $log->flock->current_count > 0
                 ? round(($totalLoss / $log->flock->current_count) * 100, 2)
                 : 0;
 
+            $speciesCode = $log->flock->species->code ?? '';
+            $metrics     = $log->species_metrics ?? [];
+            if (is_object($metrics)) {
+                $metrics = (array) $metrics;
+            }
+
+            // Build a normalised production block based on species
+            $production = null;
+
+            if (in_array($speciesCode, self::POULTRY)) {
+                $qty        = (float) ($log->eggs_collected ?? 0);
+                $damaged    = (float) ($log->eggs_damaged   ?? 0);
+                $production = [
+                    'type'    => 'eggs',
+                    'qty'     => $qty,
+                    'damaged' => $damaged,
+                    'net'     => max(0, $qty - $damaged),
+                    'unit'    => 'pieces',
+                ];
+            } elseif (in_array($speciesCode, self::DAIRY)) {
+                $qty        = (float) ($metrics['milk_litres']         ?? 0);
+                $damaged    = (float) ($metrics['milk_litres_damaged']  ?? 0);
+                $production = [
+                    'type'    => 'milk',
+                    'qty'     => $qty,
+                    'damaged' => $damaged,
+                    'net'     => max(0, $qty - $damaged),
+                    'unit'    => 'litres',
+                ];
+            } elseif (in_array($speciesCode, self::MEAT)) {
+                $qty        = (float) ($metrics['meat_kg'] ?? 0);
+                $production = [
+                    'type'    => 'meat',
+                    'qty'     => $qty,
+                    'damaged' => 0,
+                    'net'     => $qty,
+                    'unit'    => 'kg',
+                ];
+            } elseif ($speciesCode === 'BE') {
+                $qty        = (float) ($metrics['honey_kg'] ?? 0);
+                $production = [
+                    'type'    => 'honey',
+                    'qty'     => $qty,
+                    'damaged' => 0,
+                    'net'     => $qty,
+                    'unit'    => 'kg',
+                ];
+            }
+
             return response()->json([
-                'success' => true,
-                'log'     => [
+                'success'      => true,
+                'species_code' => $speciesCode,
+                'production'   => $production,
+                'log'          => [
                     'id'                       => $log->id,
                     'log_date'                 => $log->log_date->format('d M Y'),
                     'flock_number'             => $log->flock->flock_number ?? 'N/A',
@@ -357,19 +477,17 @@ class DailyLogController extends Controller
                     'culling_count'            => $log->culling_count,
                     'total_loss'               => $totalLoss,
                     'mortality_rate'           => $mortalityRate,
-                    'eggs_collected'           => $log->eggs_collected ?? 0,
-                    'eggs_damaged'             => $log->eggs_damaged   ?? 0,
-                    'feed_intake_kg'           => number_format($log->feed_intake_kg, 1),
-                    'water_consumption_liters' => number_format($log->water_consumption_liters, 1),
-                    'average_weight_kg'        => $log->average_weight_kg
-                                                    ? number_format($log->average_weight_kg, 2)
-                                                    : 'N/A',
-                    'min_temp'                 => $log->min_temperature_c ?? 'N/A',
-                    'max_temp'                 => $log->max_temperature_c ?? 'N/A',
-                    'min_humidity'             => $log->min_humidity      ?? 'N/A',
-                    'max_humidity'             => $log->max_humidity      ?? 'N/A',
-                    'ammonia_ppm'              => $log->ammonia_ppm       ?? 'N/A',
+                    // Raw numeric values so edit form number inputs pre-fill correctly
+                    'feed_intake_kg'           => $log->feed_intake_kg,
+                    'water_consumption_liters' => $log->water_consumption_liters,
+                    'average_weight_kg'        => $log->average_weight_kg,
+                    'min_temp'                 => $log->min_temperature_c,
+                    'max_temp'                 => $log->max_temperature_c,
+                    'min_humidity'             => $log->min_humidity,
+                    'max_humidity'             => $log->max_humidity,
+                    'ammonia_ppm'              => $log->ammonia_ppm,
                     'notes'                    => $log->notes,
+                    'production'               => $production,
                 ],
             ]);
         } catch (\Exception $e) {
@@ -377,49 +495,146 @@ class DailyLogController extends Controller
         }
     }
 
-    // ── Private helpers ────────────────────────────────────────────
+    // ── PRIVATE HELPERS ──────────────────────────────────────────────────────
 
     /**
-     * Sync the egg FarmProduce record when a daily log is updated.
-     * Creates, updates, or deletes the produce record to match the log.
+     * Resolve the generic production form fields (eggs_collected / eggs_damaged)
+     * into the correct database columns based on species code.
+     *
+     * The create/edit form always sends production quantity as `eggs_collected`
+     * and damage as `eggs_damaged` regardless of species — this method maps them
+     * to the right place so non-poultry data lands in species_metrics JSON.
+     *
+     * Returns [$eggsCollected, $eggsDamaged, $speciesMetrics]
      */
-    private function syncEggProduce(DailyLog $log, Request $request): void
+    private function resolveProductionFields(Request $request, string $speciesCode): array
     {
-        $eggsCollected = $request->eggs_collected ?? 0;
-        $eggsDamaged   = $request->eggs_damaged   ?? 0;
+        $rawQty      = (float) ($request->eggs_collected ?? 0);
+        $rawDamaged  = (float) ($request->eggs_damaged   ?? 0);
+        $baseMetrics = is_array($request->species_metrics) ? $request->species_metrics : [];
 
-        // Find any existing auto-created produce record for this flock/date
+        if (in_array($speciesCode, self::POULTRY)) {
+            // Eggs live in dedicated columns
+            return [$rawQty, $rawDamaged, $baseMetrics ?: null];
+        }
+
+        if (in_array($speciesCode, self::DAIRY)) {
+            // Milk goes into species_metrics
+            $baseMetrics['milk_litres']         = $rawQty;
+            $baseMetrics['milk_litres_damaged'] = $rawDamaged;
+            return [0, 0, $baseMetrics];
+        }
+
+        if (in_array($speciesCode, self::MEAT)) {
+            // Meat / live weight goes into species_metrics
+            $baseMetrics['meat_kg'] = $rawQty;
+            return [0, 0, $baseMetrics];
+        }
+
+        if ($speciesCode === 'BE') {
+            // Honey goes into species_metrics
+            $baseMetrics['honey_kg'] = $rawQty;
+            return [0, 0, $baseMetrics];
+        }
+
+        // No production for this species — pass through unchanged
+        return [0, 0, $baseMetrics ?: null];
+    }
+
+    /**
+     * Return the FarmProduce product_type string for a given species code,
+     * or null if the species has no tracked production.
+     */
+    private function getProductTypeForSpecies(string $speciesCode): ?string
+    {
+        if (in_array($speciesCode, self::POULTRY)) return 'eggs';
+        if (in_array($speciesCode, self::DAIRY))   return 'milk';
+        if (in_array($speciesCode, self::MEAT))     return 'meat';
+        if ($speciesCode === 'BE')                  return 'honey';
+        return null;
+    }
+
+    /**
+     * Sync the FarmProduce record when a daily log is created or updated.
+     * Handles eggs, milk, meat, and honey — creates, updates, or deletes
+     * the produce record to stay in sync with the log.
+     */
+    public function syncFarmProduceFromDailyLog(DailyLog $log, Flock $flock): void
+    {
+        $speciesCode = $flock->species->code ?? '';
+        $metrics     = $log->species_metrics ?? [];
+        if (is_object($metrics)) {
+            $metrics = (array) $metrics;
+        }
+
+        $productType = $this->getProductTypeForSpecies($speciesCode);
+
+        // No known production type for this species
+        if (!$productType) {
+            return;
+        }
+
+        // Determine qty, damaged, and unit based on product type
+        switch ($productType) {
+            case 'eggs':
+                $qty     = (float) ($log->eggs_collected ?? 0);
+                $damaged = (float) ($log->eggs_damaged   ?? 0);
+                $unit    = 'pieces';
+                break;
+
+            case 'milk':
+                $qty     = (float) ($metrics['milk_litres']         ?? 0);
+                $damaged = (float) ($metrics['milk_litres_damaged']  ?? 0);
+                $unit    = 'litres';
+                break;
+
+            case 'meat':
+                $qty     = (float) ($metrics['meat_kg'] ?? 0);
+                $damaged = 0;
+                $unit    = 'kg';
+                break;
+
+            case 'honey':
+                $qty     = (float) ($metrics['honey_kg'] ?? 0);
+                $damaged = 0;
+                $unit    = 'kg';
+                break;
+
+            default:
+                return;
+        }
+
+        // Find any existing auto-created produce record for this flock/date/type
         $existing = FarmProduce::where('flock_id', $log->flock_id)
-            ->where('product_type', 'eggs')
+            ->where('product_type', $productType)
             ->whereDate('produce_date', $log->log_date)
-            ->where('notes', 'like', '%Auto-recorded from daily log%')
             ->first();
 
-        if ($eggsCollected > 0) {
-            $notes = $eggsDamaged > 0
-                ? "Auto-recorded from daily log. Damaged: {$eggsDamaged}"
+        if ($qty > 0) {
+            $notes = $damaged > 0
+                ? "Auto-recorded from daily log. Damaged: {$damaged}"
                 : 'Auto-recorded from daily log';
 
             if ($existing) {
-                // Update the existing record
                 $existing->update([
-                    'quantity' => $eggsCollected,
-                    'notes'    => $notes,
+                    'quantity'         => $qty,
+                    'quantity_damaged' => $damaged,
+                    'notes'            => $notes,
                 ]);
             } else {
-                // Create a new one (worker may have added eggs on edit)
                 FarmProduce::create([
-                    'flock_id'     => $log->flock_id,
-                    'product_type' => 'eggs',
-                    'quantity'     => $eggsCollected,
-                    'unit'         => 'pieces',
-                    'produce_date' => $log->log_date,
-                    'notes'        => $notes,
-                    'created_by'   => auth()->id(),
+                    'flock_id'         => $log->flock_id,
+                    'product_type'     => $productType,
+                    'quantity'         => $qty,
+                    'quantity_damaged' => $damaged,
+                    'unit'             => $unit,
+                    'produce_date'     => $log->log_date,
+                    'notes'            => $notes,
+                    'created_by'       => auth()->id(),
                 ]);
             }
         } else {
-            // Eggs set to 0 on edit — remove the produce record if it exists
+            // Quantity is zero — remove the produce record if it exists
             if ($existing) {
                 $existing->delete();
             }

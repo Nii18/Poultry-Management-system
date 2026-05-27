@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Sale;
 use App\Models\Flock;
+use App\Models\FarmProduce;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -51,10 +52,14 @@ class SaleController extends Controller
     {
         try {
             $flocks = Flock::where('status', 'active')->get(['id', 'flock_number', 'breed_variety']);
-            
+    
+            // Pull product types from actual produce records — dynamic!
+            $produceTypes = FarmProduce::getActiveProductTypes();
+    
             return response()->json([
-                'success' => true,
-                'flocks' => $flocks
+                'success'      => true,
+                'flocks'       => $flocks,
+                'productTypes' => $produceTypes, // NEW: dynamic from produce table
             ]);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
