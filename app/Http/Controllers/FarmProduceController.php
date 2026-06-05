@@ -129,6 +129,23 @@ class FarmProduceController extends Controller
             $flocks = Flock::where('status', 'active')
                 ->get(['id', 'flock_number', 'breed_variety']);
 
+            // Add sellable_count for each flock
+            $flocksWithStock = $flocks->map(function ($flock) {
+                $current = (int) $flock->current_count;
+                $breederLog = $flock->breederLogs()->latest()->first();
+                $breeder = (int) ($breederLog->breeder_count ?? 0);
+                $sellable = max(0, $current - $breeder);
+                
+                return [
+                    'id' => $flock->id,
+                    'flock_number' => $flock->flock_number,
+                    'breed_variety' => $flock->breed_variety,
+                    'current_count' => $current,
+                    'breeder_count' => $breeder,
+                    'sellable_count' => $sellable,
+                ];
+            });
+
             $existingTypes = FarmProduce::getActiveProductTypes();
             $suggestions   = ['eggs', 'milk', 'meat', 'live_bird', 'manure',
                               'breeding_stock', 'wool', 'honey'];
@@ -136,7 +153,7 @@ class FarmProduceController extends Controller
 
             return response()->json([
                 'success'       => true,
-                'flocks'        => $flocks,
+                'flocks'        => $flocksWithStock,
                 'existingTypes' => $existingTypes,
                 'suggestions'   => $suggestions,
                 'units'         => $units,
@@ -201,12 +218,29 @@ class FarmProduceController extends Controller
         }
     }
 
-    // ── AJAX: details JSON ────────────────────────────────────────
+    // ── AJAX: details JSON (UPDATED with stock info) ─────────────────
 
     public function getDetailsJson($id)
     {
         try {
             $produce = FarmProduce::with(['flock', 'creator'])->findOrFail($id);
+            
+            // Get stock information for the associated flock
+            $stockInfo = null;
+            if ($produce->flock_id) {
+                $flock = Flock::find($produce->flock_id);
+                if ($flock && $flock->status === 'active') {
+                    $current = (int) $flock->current_count;
+                    $breederLog = $flock->breederLogs()->latest()->first();
+                    $breeder = (int) ($breederLog->breeder_count ?? 0);
+                    $sellable = max(0, $current - $breeder);
+                    $stockInfo = [
+                        'current' => $current,
+                        'breeder' => $breeder,
+                        'sellable' => $sellable,
+                    ];
+                }
+            }
 
             return response()->json([
                 'success' => true,
@@ -219,11 +253,13 @@ class FarmProduceController extends Controller
                     'quantity_damaged'   => number_format($produce->quantity_damaged, 2),
                     'net_quantity'       => number_format($produce->net_quantity, 2),
                     'unit'               => $produce->unit,
+                    'flock_id'           => $produce->flock_id,
                     'flock_number'       => $produce->flock->flock_number ?? 'N/A',
                     'flock_breed'        => $produce->flock->breed_variety ?? null,
                     'notes'              => $produce->notes ?? '—',
                     'recorded_by'        => $produce->creator->name ?? 'N/A',
                     'created_at'         => $produce->created_at->format('d M Y H:i'),
+                    'stock_info'         => $stockInfo,
                 ],
             ]);
         } catch (\Exception $e) {
@@ -236,8 +272,27 @@ class FarmProduceController extends Controller
     public function getEditData($id)
     {
         try {
-            $produce       = FarmProduce::findOrFail($id);
-            $flocks        = Flock::where('status', 'active')->get(['id', 'flock_number', 'breed_variety']);
+            $produce = FarmProduce::findOrFail($id);
+            
+            $flocks = Flock::where('status', 'active')->get();
+            
+            // Add sellable_count for each flock
+            $flocksWithStock = $flocks->map(function ($flock) {
+                $current = (int) $flock->current_count;
+                $breederLog = $flock->breederLogs()->latest()->first();
+                $breeder = (int) ($breederLog->breeder_count ?? 0);
+                $sellable = max(0, $current - $breeder);
+                
+                return [
+                    'id' => $flock->id,
+                    'flock_number' => $flock->flock_number,
+                    'breed_variety' => $flock->breed_variety,
+                    'current_count' => $current,
+                    'breeder_count' => $breeder,
+                    'sellable_count' => $sellable,
+                ];
+            });
+            
             $existingTypes = FarmProduce::getActiveProductTypes();
             $units         = ['pieces', 'trays', 'crates', 'litres', 'kg', 'bags', 'birds', 'units'];
 
@@ -253,7 +308,7 @@ class FarmProduceController extends Controller
                     'flock_id'         => $produce->flock_id,
                     'notes'            => $produce->notes,
                 ],
-                'flocks'        => $flocks,
+                'flocks'        => $flocksWithStock,
                 'existingTypes' => $existingTypes,
                 'units'         => $units,
             ]);

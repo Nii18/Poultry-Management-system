@@ -183,15 +183,20 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [FlockController::class, 'index'])->name('index');
         Route::get('/create', [FlockController::class, 'create'])->name('create');
         Route::post('/', [FlockController::class, 'store'])->name('store');
+    
+        // ── AJAX sub-routes — all BEFORE the /{id} wildcard ──────────────
+        Route::get('/{id}/details',  [FlockController::class, 'getFlockDetails'])->name('details');
+        Route::get('/{id}/edit-data',  [FlockController::class, 'getFlockEditData'])->name('edit-data');
+        Route::get('/{id}/breeders',   [FlockController::class, 'getBreederHistory'])->name('breeders.history');
+        Route::post('/{id}/breeders',  [FlockController::class, 'setBreederCount'])->name('breeders.set');
+        Route::get('/{id}/performance',  [FlockController::class, 'performance'])->name('performance');
+    
+        // ── Resource routes — AFTER all fixed-segment routes ─────────────
         Route::get('/{id}', [FlockController::class, 'show'])->name('show');
-        Route::get('/{id}/edit', [FlockController::class, 'edit'])->name('edit');
-        Route::put('/{id}', [FlockController::class, 'update'])->name('update');
-        Route::delete('/{id}', [FlockController::class, 'destroy'])->name('destroy')->middleware(['role:admin']);
-        Route::post('/{id}/close', [FlockController::class, 'close'])->name('close');
-        Route::get('/{id}/performance', [FlockController::class, 'performance'])->name('performance');
-        // AJAX routes for modals - these should be BEFORE the {id} route
-    Route::get('/{id}/details', [FlockController::class, 'getFlockDetails'])->name('details');
-    Route::get('/{id}/edit-data', [FlockController::class, 'getFlockEditData'])->name('edit-data');
+        Route::get('/{id}/edit',[FlockController::class, 'edit'])->name('edit');
+        Route::put('/{id}',   [FlockController::class, 'update'])->name('update');
+        Route::post('/{id}/close',  [FlockController::class, 'close'])->name('close');
+        Route::delete('/{id}',  [FlockController::class, 'destroy'])->name('destroy')->middleware(['role:admin']);
     });
 
      
