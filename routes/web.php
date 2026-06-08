@@ -119,7 +119,7 @@ Route::prefix('produces')->name('produces.')->group(function () {
 
 
 // ==================== WORKER ROUTES ====================
-Route::prefix('worker')->name('worker.')->middleware(['auth', 'role:worker'])->group(function () {
+Route::prefix('worker')->name('worker.')->middleware(['auth', 'role:admin,worker'])->group(function () {
     // Tasks
     Route::get('/tasks', [WorkerController::class, 'tasks'])->name('tasks');
     Route::put('/tasks/{id}/status', [WorkerController::class, 'updateTaskStatus'])->name('tasks.update-status');

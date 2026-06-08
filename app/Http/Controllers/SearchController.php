@@ -1,7 +1,5 @@
 <?php
 // app/Http/Controllers/SearchController.php
-// Drop-in replacement — preserves all your existing logic,
-// adds scope-aware filtering for the role-based header search.
 
 namespace App\Http\Controllers;
 
@@ -10,6 +8,7 @@ use App\Models\House;
 use App\Models\Treatment;
 use App\Models\DailyLog;
 use App\Models\Expense;
+use App\Models\Sale;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -17,16 +16,21 @@ use Illuminate\Support\Facades\Schema;
 class SearchController extends Controller
 {
     // ──────────────────────────────────────────────────────────────
-    // What each role is allowed to search — single source of truth.
-    // Keep this in sync with the $searchConfig array in your header blade.
+    // Role → allowed search scopes, derived from sidebar visibility.
+    //
+    // admin / manager   : full access (all sidebar sections)
+    // worker            : Daily Operations, Flocks, Housing, Breeding
+    // veterinarian      : Health (treatments, vaccinations, health_records)
+    // accountant        : Finance (expenses, sales/revenue)
+    // head_worker       : same as worker + a bit of feed visibility
     // ──────────────────────────────────────────────────────────────
     private const ROLE_SCOPES = [
-        'admin'       => ['flocks', 'houses', 'treatments', 'daily_logs', 'expenses'],
-        'manager'     => ['flocks', 'houses', 'treatments', 'daily_logs', 'expenses'],
-        'head_worker' => ['flocks', 'daily_logs'],
-        'worker'      => ['daily_logs'],
-        'veterinarian'=> ['treatments'],
-        'accountant'  => ['expenses'],
+        'admin'        => ['flocks', 'houses', 'treatments', 'daily_logs', 'expenses', 'sales', 'breeding_records'],
+        'manager'      => ['flocks', 'houses', 'treatments', 'daily_logs', 'expenses', 'sales', 'breeding_records'],
+        'head_worker'  => ['flocks', 'houses', 'daily_logs', 'breeding_records'],
+        'worker'       => ['flocks', 'houses', 'daily_logs', 'breeding_records'],
+        'veterinarian' => ['treatments'],
+        'accountant'   => ['expenses', 'sales'],
     ];
 
     // ──────────────────────────────────────────────────────────────
@@ -39,13 +43,15 @@ class SearchController extends Controller
 
         if (!$query) {
             return view('search.results', [
-                'flocks'     => collect(),
-                'houses'     => collect(),
-                'treatments' => collect(),
-                'daily_logs' => collect(),
-                'expenses'   => collect(),
-                'query'      => '',
-                'total'      => 0,
+                'flocks'           => collect(),
+                'houses'           => collect(),
+                'treatments'       => collect(),
+                'daily_logs'       => collect(),
+                'expenses'         => collect(),
+                'sales'            => collect(),
+                'breeding_records' => collect(),
+                'query'            => '',
+                'total'            => 0,
             ]);
         }
 
@@ -64,12 +70,14 @@ class SearchController extends Controller
 
         if (strlen($query) < 2) {
             return response()->json([
-                'total'      => 0,
-                'flocks'     => [],
-                'houses'     => [],
-                'treatments' => [],
-                'daily_logs' => [],
-                'expenses'   => [],
+                'total'            => 0,
+                'flocks'           => [],
+                'houses'           => [],
+                'treatments'       => [],
+                'daily_logs'       => [],
+                'expenses'         => [],
+                'sales'            => [],
+                'breeding_records' => [],
             ]);
         }
 
@@ -79,25 +87,26 @@ class SearchController extends Controller
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Core search — unchanged logic, now scope-aware
+    // Core search
     // ──────────────────────────────────────────────────────────────
     public function performSearch(string $query, array $scopes = []): array
     {
         $user     = auth()->user();
         $userRole = $user->role;
 
-        // If no scopes supplied (e.g. called directly), default to role's full set
         if (empty($scopes)) {
             $scopes = self::ROLE_SCOPES[$userRole] ?? [];
         }
 
         $results = [
-            'flocks'     => collect(),
-            'houses'     => collect(),
-            'treatments' => collect(),
-            'daily_logs' => collect(),
-            'expenses'   => collect(),
-            'total'      => 0,
+            'flocks'           => collect(),
+            'houses'           => collect(),
+            'treatments'       => collect(),
+            'daily_logs'       => collect(),
+            'expenses'         => collect(),
+            'sales'            => collect(),
+            'breeding_records' => collect(),
+            'total'            => 0,
         ];
 
         // ── Flocks ──────────────────────────────────────────────
@@ -105,7 +114,6 @@ class SearchController extends Controller
             try {
                 $flockQuery = Flock::query();
 
-                // Workers/head workers only see their assigned flocks
                 if (in_array($userRole, ['worker', 'head_worker'])) {
                     $flockQuery->whereHas('assignedWorkers', function ($q) use ($user) {
                         $q->where('user_id', $user->id);
@@ -120,6 +128,9 @@ class SearchController extends Controller
                         }
                         if (Schema::hasColumn('flocks', 'description')) {
                             $q->orWhere('description', 'LIKE', "%{$query}%");
+                        }
+                        if (Schema::hasColumn('flocks', 'breed_variety')) {
+                            $q->orWhere('breed_variety', 'LIKE', "%{$query}%");
                         }
                     })
                     ->limit(5)
@@ -143,7 +154,7 @@ class SearchController extends Controller
                     });
 
                 $results['flocks']  = $flocks;
-                $results['total']  += $flocks->count();
+                $results['total'] += $flocks->count();
             } catch (\Exception $e) {
                 Log::error('Flocks search error: ' . $e->getMessage());
             }
@@ -179,7 +190,7 @@ class SearchController extends Controller
                     });
 
                 $results['houses']  = $houses;
-                $results['total']  += $houses->count();
+                $results['total'] += $houses->count();
             } catch (\Exception $e) {
                 Log::error('Houses search error: ' . $e->getMessage());
             }
@@ -193,6 +204,9 @@ class SearchController extends Controller
                         $q->where('medication_name', 'LIKE', "%{$query}%");
                         if (Schema::hasColumn('treatments', 'diagnosis')) {
                             $q->orWhere('diagnosis', 'LIKE', "%{$query}%");
+                        }
+                        if (Schema::hasColumn('treatments', 'administration_route')) {
+                            $q->orWhere('administration_route', 'LIKE', "%{$query}%");
                         }
                         $q->orWhereHas('flock', function ($sub) use ($query) {
                             $sub->where('flock_number', 'LIKE', "%{$query}%");
@@ -226,7 +240,6 @@ class SearchController extends Controller
             try {
                 $logQuery = DailyLog::with('flock');
 
-                // Workers only see their own logs
                 if (in_array($userRole, ['worker', 'head_worker'])) {
                     $logQuery->where('user_id', $user->id);
                 }
@@ -266,6 +279,7 @@ class SearchController extends Controller
         }
 
         // ── Expenses ────────────────────────────────────────────
+        // Sidebar: Finance section → admin, manager, accountant
         if (in_array('expenses', $scopes)) {
             try {
                 $expenses = Expense::where(function ($q) use ($query) {
@@ -302,27 +316,107 @@ class SearchController extends Controller
             }
         }
 
+        // ── Sales & Revenue ─────────────────────────────────────
+        // Sidebar: "Sales & Revenue" → admin, manager, accountant
+        if (in_array('sales', $scopes)) {
+            try {
+                $sales = Sale::with('flock')
+                    ->where(function ($q) use ($query) {
+                        $q->where('description', 'LIKE', "%{$query}%")
+                          ->orWhere('product_type', 'LIKE', "%{$query}%")
+                          ->orWhere('customer_name', 'LIKE', "%{$query}%");
+                        if (Schema::hasColumn('sales', 'receipt_number')) {
+                            $q->orWhere('receipt_number', 'LIKE', "%{$query}%");
+                        }
+                        $q->orWhereHas('flock', function ($sub) use ($query) {
+                            $sub->where('flock_number', 'LIKE', "%{$query}%");
+                        });
+                    })
+                    ->limit(5)
+                    ->get()
+                    ->map(function ($sale) {
+                        $label = $sale->product_type_label ?? ucfirst(str_replace('_', ' ', $sale->product_type));
+                        return [
+                            'id'       => $sale->id,
+                            'name'     => $label . ($sale->customer_name ? ' — ' . $sale->customer_name : ''),
+                            'amount'   => $sale->total_amount,
+                            'type'     => 'sale',
+                            'url'      => route('sales.index'),   // show/edit page if you have one, else index
+                            'icon'     => 'fa-chart-line',
+                            'color'    => 'success',
+                            'subtitle' => 'Flock #' . ($sale->flock->flock_number ?? 'N/A')
+                                        . ' · ₵' . number_format($sale->total_amount, 2)
+                                        . ' · ' . \Carbon\Carbon::parse($sale->sale_date)->format('M d, Y'),
+                        ];
+                    });
+
+                $results['sales']  = $sales;
+                $results['total'] += $sales->count();
+            } catch (\Exception $e) {
+                Log::error('Sales search error: ' . $e->getMessage());
+            }
+        }
+
+        // ── Breeding Records ────────────────────────────────────
+        // Sidebar: Breeding → admin, manager, worker
+        if (in_array('breeding_records', $scopes)) {
+            try {
+                if (class_exists(\App\Models\BreedingRecord::class)) {
+                    $breedingQuery = \App\Models\BreedingRecord::with('flock');
+
+                    $breeding_records = $breedingQuery
+                        ->where(function ($q) use ($query) {
+                            if (Schema::hasColumn('breeding_records', 'notes')) {
+                                $q->where('notes', 'LIKE', "%{$query}%");
+                            }
+                            if (Schema::hasColumn('breeding_records', 'status')) {
+                                $q->orWhere('status', 'LIKE', "%{$query}%");
+                            }
+                            $q->orWhereHas('flock', function ($sub) use ($query) {
+                                $sub->where('flock_number', 'LIKE', "%{$query}%");
+                            });
+                        })
+                        ->limit(5)
+                        ->get()
+                        ->map(function ($record) {
+                            $date = $record->created_at instanceof \Carbon\Carbon
+                                ? $record->created_at
+                                : \Carbon\Carbon::parse($record->created_at);
+                            return [
+                                'id'       => $record->id,
+                                'name'     => 'Breeding Record #' . $record->id,
+                                'type'     => 'breeding_record',
+                                'url'      => route('breeding-records.index'),
+                                'icon'     => 'fa-heart',
+                                'color'    => 'pink',
+                                'subtitle' => 'Flock #' . ($record->flock->flock_number ?? 'N/A')
+                                            . ' · ' . ucfirst($record->status ?? 'pending')
+                                            . ' · ' . $date->format('M d, Y'),
+                            ];
+                        });
+
+                    $results['breeding_records']  = $breeding_records;
+                    $results['total']            += $breeding_records->count();
+                }
+            } catch (\Exception $e) {
+                Log::error('Breeding records search error: ' . $e->getMessage());
+            }
+        }
+
         return $results;
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Resolve + validate scopes from the request
+    // Resolve + validate scopes from the request.
+    // Intersect requested scopes with what the role is allowed —
+    // so devtools edits can't expose data outside the role's scope.
     // ──────────────────────────────────────────────────────────────
-
-    /**
-     * Parse the comma-separated scopes string sent by the header search,
-     * then intersect with what the current role is actually allowed to see.
-     *
-     * This means even if someone edits the hidden <input> in devtools,
-     * they cannot access data outside their role's permitted set.
-     */
     private function resolveScopes(?string $rawScopes = ''): array
     {
         $userRole  = auth()->user()?->role ?? 'guest';
         $permitted = self::ROLE_SCOPES[$userRole] ?? [];
 
         if (empty(trim($rawScopes ?? ''))) {
-            // No scopes sent → return everything the role can see
             return $permitted;
         }
 
@@ -330,7 +424,6 @@ class SearchController extends Controller
             array_map('trim', explode(',', $rawScopes ?? ''))
         );
 
-        // Silently drop any scope the role isn't allowed
         return array_values(array_intersect($requested, $permitted));
     }
 }

@@ -297,6 +297,19 @@
     <h5 class="sidebar-title f-w-700">My Tools</h5>
 </li>
 
+
+<!-- My Attendance -->
+<li class="sidebar-list">
+  <i class="fa-solid fa-thumbtack"></i>
+  <a class="sidebar-link" href="{{ route('worker.attendance') }}">
+      <svg class="stroke-icon">
+          <use href="{{ asset('assets/svg/iconly-sprite.svg#Calendar') }}"></use>
+      </svg>
+      <h6>My Attendance</h6>
+  </a>
+</li>
+
+
 <!-- My Tasks -->
 <li class="sidebar-list">
     <i class="fa-solid fa-thumbtack"></i>
@@ -308,16 +321,7 @@
     </a>
 </li>
 
-<!-- My Attendance -->
-<li class="sidebar-list">
-    <i class="fa-solid fa-thumbtack"></i>
-    <a class="sidebar-link" href="{{ route('worker.attendance') }}">
-        <svg class="stroke-icon">
-            <use href="{{ asset('assets/svg/iconly-sprite.svg#Calendar') }}"></use>
-        </svg>
-        <h6>My Attendance</h6>
-    </a>
-</li>
+
 
 <!-- Help & Tips -->
 <li class="sidebar-list">

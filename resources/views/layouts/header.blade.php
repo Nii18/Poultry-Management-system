@@ -26,37 +26,30 @@
     $searchConfig = match($userRole) {
         'worker' => [
             'placeholder' => 'Search daily logs, tasks…',
-            'hint'        => 'Daily Logs · Tasks',
             'scopes'      => ['daily_logs'],
         ],
         'head_worker' => [
             'placeholder' => 'Search flocks, logs, feed…',
-            'hint'        => 'Flocks · Daily Logs · Feed',
             'scopes'      => ['flocks', 'daily_logs'],
         ],
         'veterinarian' => [
             'placeholder' => 'Search treatments, vaccinations, health…',
-            'hint'        => 'Treatments · Vaccinations · Health Records',
             'scopes'      => ['treatments'],
         ],
         'accountant' => [
             'placeholder' => 'Search expenses, sales, revenue…',
-            'hint'        => 'Expenses · Sales · Finance',
             'scopes'      => ['expenses'],
         ],
         'manager' => [
             'placeholder' => 'Search flocks, houses, treatments, expenses…',
-            'hint'        => 'Flocks · Houses · Treatments · Expenses',
             'scopes'      => ['flocks', 'houses', 'treatments', 'daily_logs', 'expenses'],
         ],
         'admin' => [
             'placeholder' => 'Search anything — flocks, logs, expenses…',
-            'hint'        => 'All modules',
             'scopes'      => [],
         ],
         default => [
             'placeholder' => 'Search…',
-            'hint'        => '',
             'scopes'      => [],
         ],
     };
@@ -130,27 +123,24 @@
                             id="top-search"
                             value="{{ request('query') }}"
                             autocomplete="off"
-                            style="width:280px;"
+                            style="width:320px;"
                             data-scopes="{{ $searchScopes }}"
                         >
                         <button type="submit" class="btn btn-primary border-start-0" style="border-radius:0 4px 4px 0;">
                             <i class="fas fa-search"></i>
                         </button>
                     </div>
-                    @if($searchConfig['hint'])
-                        <div class="search-scope-hint">
-                            <i class="fas fa-filter me-1" style="font-size:.65rem;"></i>{{ $searchConfig['hint'] }}
-                        </div>
-                    @endif
                 </form>
 
-                {{-- Live-search dropdown --}}
+                {{-- Live-search dropdown with improved UI --}}
                 <div class="dropdown-menu dropdown-menu-animated dropdown-lg" id="search-dropdown">
                     <div class="dropdown-header noti-title d-flex justify-content-between align-items-center">
-                        <h5 class="text-overflow mb-0" id="search-results-count">Start typing to search…</h5>
-                        <button type="button" class="btn-close btn-sm" id="closeSearchDropdown" style="font-size:.65rem;"></button>
+                        <h6 class="text-overflow mb-0" id="search-results-count">
+                            <i class="fas fa-search me-1"></i> Start typing to search...
+                        </h6>
+                        <button type="button" class="btn-close btn-sm" id="closeSearchDropdown"></button>
                     </div>
-                    <div id="search-results" style="max-height:380px;overflow-y:auto;"></div>
+                    <div id="search-results" style="max-height: 420px; overflow-y: auto;"></div>
                 </div>
             </li>
         </div>
@@ -405,81 +395,240 @@
     position: relative;
 }
 
-/* ── Search ──────────────────────────────────────────────────── */
+/* ── Improved Search Dropdown UI ──────────────────────────────────── */
 .app-search { position: relative; }
-.dropdown-lg { min-width: 400px; }
+.dropdown-lg { 
+    min-width: 500px; 
+    width: 500px;
+}
+
 .dropdown-menu {
     position: absolute;
-    top: 100%; left: 0;
+    top: calc(100% + 8px);
+    left: 0;
     z-index: 1000;
     display: none;
-    min-width: 10rem;
-    padding: .5rem 0;
-    margin: .125rem 0 0;
-    font-size: .875rem;
-    color: #212529;
     background-color: #fff;
     background-clip: padding-box;
-    border: 1px solid rgba(0,0,0,.15);
-    border-radius: .25rem;
-    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    border: 1px solid rgba(0,0,0,.1);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.15);
+    padding: 0;
+    overflow: hidden;
 }
-.dropdown-menu.show { display: block; }
+
+.dropdown-menu.show { 
+    display: block;
+    animation: dropdownSlideIn 0.2s ease-out;
+}
+
+@keyframes dropdownSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .dropdown-header {
     display: block;
-    padding: .5rem 1rem;
-    font-size: .75rem;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border-bottom: 1px solid #e9ecef;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #495057;
+}
+
+.dropdown-header h6 {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+/* Search Result Items - Like Second Image */
+.search-section-header {
+    padding: 10px 16px;
+    background: #f8f9fa;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     color: #6c757d;
-    white-space: nowrap;
+    border-bottom: 1px solid #e9ecef;
 }
-.dropdown-item {
-    display: block;
-    width: 100%;
-    padding: .5rem 1rem;
-    font-weight: 400;
-    color: #212529;
-    text-decoration: none;
-    background-color: transparent;
-    border: 0;
-}
-.dropdown-item:hover { background-color: #f8f9fa; }
 
 .search-result-item {
     display: flex;
     align-items: center;
-    padding: 10px 15px;
+    padding: 12px 16px;
     text-decoration: none;
-    color: #333;
+    color: #212529;
     border-bottom: 1px solid #f0f0f0;
-    transition: background-color .2s;
+    transition: all 0.2s ease;
     cursor: pointer;
 }
-.search-result-item:hover { background-color: #f8f9fa; }
+
+.search-result-item:hover {
+    background-color: #f8f9fa;
+}
+
 .result-icon {
-    width: 35px; height: 35px;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 50%;
-    margin-right: 12px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    margin-right: 14px;
     flex-shrink: 0;
+    font-size: 1.1rem;
 }
-.result-content { flex: 1; overflow: hidden; }
-.result-title   { font-weight: 600; margin-bottom: 2px; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.result-subtitle{ font-size: .7rem; color: #6c757d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.result-arrow   { color: #adb5bd; font-size: 12px; flex-shrink: 0; }
 
-.search-scope-hint {
-    font-size: .65rem;
+.result-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.result-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+    color: #212529;
+}
+
+.result-subtitle {
+    font-size: 0.75rem;
     color: #6c757d;
-    padding: 2px 8px 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 360px;
+    line-height: 1.3;
 }
 
-/* scrollbars */
-#search-results::-webkit-scrollbar          { width: 4px; }
-#search-results::-webkit-scrollbar-thumb    { background: #dee2e6; border-radius: 4px; }
+.result-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #e9ecef;
+    border-radius: 12px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #495057;
+    margin-left: 8px;
+}
+
+.result-arrow {
+    color: #cbd5e1;
+    font-size: 12px;
+    flex-shrink: 0;
+    margin-left: 12px;
+    transition: transform 0.2s;
+}
+
+.search-result-item:hover .result-arrow {
+    transform: translateX(4px);
+    color: #4f46e5;
+}
+
+/* Loading State */
+.search-loading {
+    padding: 40px;
+    text-align: center;
+}
+
+.search-loading-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid #e9ecef;
+    border-top-color: #4f46e5;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin: 0 auto 12px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Empty State */
+.search-empty {
+    padding: 50px 20px;
+    text-align: center;
+}
+
+.search-empty-icon {
+    font-size: 48px;
+    color: #dee2e6;
+    margin-bottom: 12px;
+}
+
+.search-empty-title {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin-bottom: 4px;
+}
+
+.search-empty-subtitle {
+    font-size: 0.8rem;
+    color: #adb5bd;
+}
+
+/* Footer */
+.search-dropdown-footer {
+    padding: 12px 16px;
+    background: #f8f9fa;
+    border-top: 1px solid #e9ecef;
+    text-align: center;
+}
+
+.view-all-link {
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #4f46e5;
+    transition: color 0.2s;
+}
+
+.view-all-link:hover {
+    color: #6366f1;
+}
+
+/* Scrollbar */
+#search-results::-webkit-scrollbar {
+    width: 6px;
+}
+#search-results::-webkit-scrollbar-track {
+    background: #f1f3f5;
+}
+#search-results::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+}
+#search-results::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Search Input Styling */
+#top-search {
+    border-radius: 8px 0 0 8px;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+#top-search:focus {
+    box-shadow: none;
+    border-color: #4f46e5;
+}
+
+#searchSubmitBtn {
+    border-radius: 0 8px 8px 0;
+    transition: all 0.2s;
+}
+
+#searchSubmitBtn:hover {
+    background: #4338ca;
+    border-color: #4338ca;
+}
 
 /* ── Notifications ───────────────────────────────────────────── */
 .notification-badge-header {
@@ -523,11 +672,37 @@
 .badge-inactive { background: #fee2e2; color: #991b1b; padding: 5px 12px; border-radius: 20px; font-size: .75rem; }
 
 /* ── Dark mode overrides ─────────────────────────────────────── */
-.dark .dropdown-menu        { background: #1a1a2e; border-color: #2d2d44; color: #e0e0e0; }
-.dark .search-result-item   { color: #e0e0e0; border-bottom-color: #2d2d44; }
+.dark .dropdown-menu { 
+    background: #1e1e2f; 
+    border-color: #2d2d44; 
+    box-shadow: 0 10px 30px rgba(0,0,0,.3);
+}
+.dark .dropdown-header {
+    background: linear-gradient(135deg, #25253a 0%, #1e1e2f 100%);
+    border-bottom-color: #2d2d44;
+    color: #e2e8f0;
+}
+.dark .search-section-header {
+    background: #202033;
+    color: #94a3b8;
+    border-bottom-color: #2d2d44;
+}
+.dark .search-result-item {
+    color: #e2e8f0;
+    border-bottom-color: #2d2d44;
+}
 .dark .search-result-item:hover { background-color: #2d2d44; }
-.dark .dropdown-header      { color: #adb5bd; }
-.dark .detail-value         { color: #e0e0e0; }
+.dark .result-title { color: #e2e8f0; }
+.dark .result-subtitle { color: #94a3b8; }
+.dark .result-badge {
+    background: #2d2d44;
+    color: #cbd5e1;
+}
+.dark .search-dropdown-footer {
+    background: #25253a;
+    border-top-color: #2d2d44;
+}
+.dark .detail-value { color: #e0e0e0; }
 .dark .badge-active   { background: #065f46; color: #dcfce7; }
 .dark .badge-inactive { background: #991b1b; color: #fee2e2; }
 .dark .notification-item:hover { background-color: #2d2d44; }
@@ -537,12 +712,23 @@
 @media (max-width: 992px) {
     .header-center h4 { font-size: .9rem; }
     .header-center p  { display: none; }
-    .dropdown-lg      { min-width: 300px; right: 0; left: auto; }
-    #top-search       { width: 220px !important; }
+    .dropdown-lg { 
+        min-width: 380px; 
+        width: 380px;
+        right: 0;
+        left: auto;
+    }
+    #top-search { width: 250px !important; }
 }
+
 @media (max-width: 768px) {
-    #top-search       { width: 180px !important; }
-    .header-center h4 { font-size: .75rem; }
+    .dropdown-lg { 
+        min-width: calc(100vw - 32px); 
+        width: calc(100vw - 32px);
+    }
+    #top-search { width: 200px !important; }
+    .result-icon { width: 36px; height: 36px; font-size: 1rem; }
+    .result-title { font-size: 0.85rem; }
 }
 </style>
 @endpush
@@ -553,7 +739,7 @@
 $(document).ready(function () {
 
     // ════════════════════════════════════════════════════════════
-    // SEARCH
+    // ENHANCED SEARCH WITH IMPROVED UI
     // ════════════════════════════════════════════════════════════
     let searchTimeout;
     const searchInput    = $('#top-search');
@@ -561,6 +747,45 @@ $(document).ready(function () {
     const searchResults  = $('#search-results');
     const resultsCount   = $('#search-results-count');
     const searchScopes   = searchInput.data('scopes') || '';
+
+    // Section configurations for better UI
+    const sectionConfig = {
+        flocks: { 
+            icon: 'fa-users', 
+            color: '#4f46e5', 
+            bg: 'rgba(79, 70, 229, 0.1)',
+            label: 'FLOCKS & HERDS',
+            emoji: '🐔'
+        },
+        houses: { 
+            icon: 'fa-building', 
+            color: '#10b981', 
+            bg: 'rgba(16, 185, 129, 0.1)',
+            label: 'HOUSES',
+            emoji: '🏠'
+        },
+        treatments: { 
+            icon: 'fa-stethoscope', 
+            color: '#ef4444', 
+            bg: 'rgba(239, 68, 68, 0.1)',
+            label: 'TREATMENTS',
+            emoji: '💊'
+        },
+        daily_logs: { 
+            icon: 'fa-clipboard-list', 
+            color: '#06b6d4', 
+            bg: 'rgba(6, 182, 212, 0.1)',
+            label: 'DAILY LOGS',
+            emoji: '📋'
+        },
+        expenses: { 
+            icon: 'fa-receipt', 
+            color: '#f59e0b', 
+            bg: 'rgba(245, 158, 11, 0.1)',
+            label: 'EXPENSES',
+            emoji: '💰'
+        }
+    };
 
     // Close on outside click
     $(document).on('click', function (e) {
@@ -578,12 +803,17 @@ $(document).ready(function () {
         searchDropdown.removeClass('show');
     });
 
+    // Prevent dropdown from closing when clicking inside
+    searchDropdown.on('click', function(e) {
+        e.stopPropagation();
+    });
+
     searchInput.on('focus', function () {
         const q = $(this).val().trim();
         if (q.length >= 2) {
             performSearch(q);
         } else {
-            resultsCount.text('Start typing to search…');
+            resultsCount.html('<i class="fas fa-search me-1"></i> Start typing to search...');
             searchResults.html('');
             searchDropdown.addClass('show');
         }
@@ -593,7 +823,7 @@ $(document).ready(function () {
         clearTimeout(searchTimeout);
         const q = $(this).val().trim();
         if (q.length < 2) {
-            resultsCount.text('Start typing to search…');
+            resultsCount.html('<i class="fas fa-search me-1"></i> Start typing to search...');
             searchResults.html('');
             searchDropdown.addClass('show');
             return;
@@ -602,8 +832,13 @@ $(document).ready(function () {
     });
 
     function performSearch(query) {
-        resultsCount.text('Searching…');
-        searchResults.html('<div class="text-center p-3"><i class="fas fa-spinner fa-spin"></i> Searching…</div>');
+        resultsCount.html('<i class="fas fa-spinner fa-spin me-1"></i> Searching...');
+        searchResults.html(`
+            <div class="search-loading">
+                <div class="search-loading-spinner"></div>
+                <div class="text-muted" style="font-size: 0.8rem;">Searching across modules...</div>
+            </div>
+        `);
         searchDropdown.addClass('show');
 
         $.ajax({
@@ -614,79 +849,115 @@ $(document).ready(function () {
             success: data  => displaySearchResults(data, query),
             error:  (xhr)  => {
                 console.error('Search error:', xhr);
-                resultsCount.text('Error searching');
-                searchResults.html('<div class="text-center p-3 text-danger">Error occurred. Please try again.</div>');
+                resultsCount.html('<i class="fas fa-exclamation-triangle me-1"></i> Error');
+                searchResults.html(`
+                    <div class="search-empty">
+                        <div class="search-empty-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                        <div class="search-empty-title">Something went wrong</div>
+                        <div class="search-empty-subtitle">Please try again</div>
+                    </div>
+                `);
             }
         });
     }
 
     function displaySearchResults(data, query) {
-        if (data.total === 0) {
-            resultsCount.text('No results found');
-            searchResults.html(`<div class="text-center p-3 text-muted">No results for "${escapeHtml(query)}"</div>`);
+        const totalResults = data.total || 0;
+        
+        if (totalResults === 0) {
+            resultsCount.html('<i class="fas fa-search me-1"></i> No results found');
+            searchResults.html(`
+                <div class="search-empty">
+                    <div class="search-empty-icon"><i class="fas fa-inbox"></i></div>
+                    <div class="search-empty-title">No results found for "${escapeHtml(query)}"</div>
+                    <div class="search-empty-subtitle">Try different keywords</div>
+                </div>
+            `);
             return;
         }
 
-        resultsCount.text(data.total + ' result(s) found');
+        resultsCount.html(`<i class="fas fa-search me-1"></i> ${totalResults} result${totalResults !== 1 ? 's' : ''} found`);
+        
         let html = '';
+        let hasResults = false;
 
-        const sections = [
-            { key: 'flocks',     label: '🐔 FLOCKS & HERDS', color: '#0d6efd', bg: 'rgba(13,110,253,.1)',  fn: 'showFlockDetailsFromSearch'     },
-            { key: 'houses',     label: '🏠 HOUSES',          color: '#198754', bg: 'rgba(25,135,84,.1)',   fn: 'showHouseDetailsFromSearch'     },
-            { key: 'treatments', label: '💊 TREATMENTS',      color: '#dc3545', bg: 'rgba(220,53,69,.1)',   fn: 'showTreatmentDetailsFromSearch' },
-            { key: 'daily_logs', label: '📋 DAILY LOGS',      color: '#0dcaf0', bg: 'rgba(13,202,240,.1)',  fn: 'showDailyLogDetailsFromSearch'  },
-            { key: 'expenses',   label: '💰 EXPENSES',        color: '#ffc107', bg: 'rgba(255,193,7,.1)',   fn: 'showExpenseDetailsFromSearch'   },
-        ];
-
-        sections.forEach(sec => {
-            if (!data[sec.key] || !data[sec.key].length) return;
-            html += `<div class="dropdown-header bg-light fw-bold">${sec.label}</div>`;
-            data[sec.key].forEach(item => {
+        // Build sections like the second image
+        for (const [key, config] of Object.entries(sectionConfig)) {
+            if (data[key] && data[key].length > 0) {
+                hasResults = true;
                 html += `
-                    <div class="search-result-item" onclick="${sec.fn}(${item.id})">
-                        <div class="result-icon" style="background:${sec.bg};color:${sec.color};">
-                            <i class="fas ${item.icon}"></i>
+                    <div class="search-section-header">
+                        <i class="fas ${config.icon} me-2"></i>
+                        ${config.label}
+                    </div>
+                `;
+                
+                data[key].forEach(item => {
+                    html += `
+                        <div class="search-result-item" onclick="navigateToResult('${key}', ${item.id})">
+                            <div class="result-icon" style="background: ${config.bg}; color: ${config.color};">
+                                <i class="fas ${config.icon}"></i>
+                            </div>
+                            <div class="result-content">
+                                <div class="result-title">
+                                    ${escapeHtml(item.name)}
+                                    ${item.category ? `<span class="result-badge">${escapeHtml(item.category)}</span>` : ''}
+                                </div>
+                                <div class="result-subtitle">${escapeHtml(item.subtitle)}</div>
+                            </div>
+                            <div class="result-arrow">
+                                <i class="fas fa-chevron-right"></i>
+                            </div>
                         </div>
-                        <div class="result-content">
-                            <div class="result-title">${escapeHtml(item.name)}</div>
-                            <div class="result-subtitle">${escapeHtml(item.subtitle)}</div>
-                        </div>
-                        <div class="result-arrow"><i class="fas fa-chevron-right"></i></div>
-                    </div>`;
-            });
-        });
+                    `;
+                });
+            }
+        }
 
-        html += `<div class="text-center p-2 border-top">
-                    <a href="/search?query=${encodeURIComponent(query)}&scopes=${encodeURIComponent(searchScopes)}"
-                       class="text-primary text-decoration-none small">View all results →</a>
-                 </div>`;
+        if (!hasResults) {
+            html = `
+                <div class="search-empty">
+                    <div class="search-empty-icon"><i class="fas fa-search"></i></div>
+                    <div class="search-empty-title">No results found</div>
+                    <div class="search-empty-subtitle">Try a different search term</div>
+                </div>
+            `;
+        } else {
+            html += `
+                <div class="search-dropdown-footer">
+                    <a href="/search?query=${encodeURIComponent(query)}&scopes=${encodeURIComponent(searchScopes)}" 
+                       class="view-all-link">
+                        View all ${totalResults} results <i class="fas fa-arrow-right ms-1"></i>
+                    </a>
+                </div>
+            `;
+        }
+
         searchResults.html(html);
     }
 
+    // Navigation function
+    window.navigateToResult = function(type, id) {
+        const routes = {
+            flocks: `/flocks/${id}`,
+            houses: `/houses/${id}`,
+            treatments: `/treatments/${id}`,
+            daily_logs: `/daily-logs/${id}`,
+            expenses: `/expenses/${id}`
+        };
+        
+        const url = routes[type];
+        if (url) {
+            searchDropdown.removeClass('show');
+            window.location.href = url;
+        }
+    };
+
     // ════════════════════════════════════════════════════════════
-    // SEARCH → MODAL DETAIL HANDLERS
+    // SEARCH → MODAL DETAIL HANDLERS (keep your existing ones)
     // ════════════════════════════════════════════════════════════
-    function openDetailModal(modalId, contentId, spinnerColor, url) {
-        $('#search-dropdown').removeClass('show');
-        const modalEl = document.getElementById(modalId);
-        if (!modalEl) return false;
-
-        const modal   = new bootstrap.Modal(modalEl);
-        const content = document.getElementById(contentId);
-        content.innerHTML = `<div class="text-center py-4">
-            <div class="spinner-border text-${spinnerColor}" role="status"></div>
-            <p class="mt-2">Loading…</p></div>`;
-        modal.show();
-
-        fetch(url, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
-            .then(r => r.json())
-            .then(data => { if (!data.success) throw new Error(data.message); return data; });
-
-        return { modal, content };
-    }
-
     window.showFlockDetailsFromSearch = function (id) {
-        $('#search-dropdown').removeClass('show');
+        searchDropdown.removeClass('show');
         const el = document.getElementById('viewFlockModal');
         if (!el) { window.location.href = `/flocks/${id}`; return; }
         const modal = new bootstrap.Modal(el);
@@ -700,7 +971,7 @@ $(document).ready(function () {
     };
 
     window.showHouseDetailsFromSearch = function (id) {
-        $('#search-dropdown').removeClass('show');
+        searchDropdown.removeClass('show');
         const el = document.getElementById('viewHouseModal');
         if (!el) { window.location.href = `/houses/${id}`; return; }
         const modal = new bootstrap.Modal(el);
@@ -714,7 +985,7 @@ $(document).ready(function () {
     };
 
     window.showTreatmentDetailsFromSearch = function (id) {
-        $('#search-dropdown').removeClass('show');
+        searchDropdown.removeClass('show');
         const el = document.getElementById('viewTreatmentModal');
         if (!el) { window.location.href = `/treatments/${id}`; return; }
         const modal = new bootstrap.Modal(el);
@@ -728,7 +999,7 @@ $(document).ready(function () {
     };
 
     window.showDailyLogDetailsFromSearch = function (id) {
-        $('#search-dropdown').removeClass('show');
+        searchDropdown.removeClass('show');
         const el = document.getElementById('viewDailyLogModal');
         if (!el) { window.location.href = `/daily-logs/${id}`; return; }
         const modal = new bootstrap.Modal(el);
@@ -742,7 +1013,7 @@ $(document).ready(function () {
     };
 
     window.showExpenseDetailsFromSearch = function (id) {
-        $('#search-dropdown').removeClass('show');
+        searchDropdown.removeClass('show');
         const el = document.getElementById('viewExpenseModal');
         if (!el) { window.location.href = `/expenses/${id}`; return; }
         const modal = new bootstrap.Modal(el);
@@ -756,7 +1027,7 @@ $(document).ready(function () {
     };
 
     // ════════════════════════════════════════════════════════════
-    // MODAL CONTENT RENDERERS
+    // MODAL CONTENT RENDERERS (keep your existing ones)
     // ════════════════════════════════════════════════════════════
     function displayFlockDetailsInModal(flock, summary) {
         document.getElementById('viewFlockContent').innerHTML = `
@@ -947,8 +1218,7 @@ $(document).ready(function () {
         if (totalEl) totalEl.textContent = total;
     }
 
-    // Mark all as read
-    document.getElementById('markAllReadBtn')?.addEventListener('click', function (e) {
+    $('#markAllReadBtn')?.on('click', function (e) {
         e.stopPropagation();
         fetch('{{ route("notifications.mark-all-read") }}', {
             method: 'POST',
@@ -978,11 +1248,11 @@ $(document).ready(function () {
     };
 
     function showNotificationModal(n) {
-        document.getElementById('notificationModal')?.remove();
+        $('#notificationModal').remove();
 
         const severityColor = { critical:'danger', high:'warning', medium:'info', low:'secondary' }[n.severity] || 'primary';
 
-        document.body.insertAdjacentHTML('beforeend', `
+        $('body').append(`
             <div class="modal fade" id="notificationModal" tabindex="-1">
                 <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content">
@@ -1003,25 +1273,23 @@ $(document).ready(function () {
 
         const modal = new bootstrap.Modal(document.getElementById('notificationModal'));
         modal.show();
-        document.getElementById('notificationModal').addEventListener('hidden.bs.modal', function () { this.remove(); });
+        $('#notificationModal').on('hidden.bs.modal', function () { $(this).remove(); });
     }
 
     // ════════════════════════════════════════════════════════════
     // DARK MODE
     // ════════════════════════════════════════════════════════════
-    const darkBtn = document.querySelector('.dark-mode');
-    if (darkBtn) {
-        darkBtn.addEventListener('click', function () {
-            document.body.classList.toggle('dark');
-            localStorage.setItem('darkMode', document.body.classList.contains('dark'));
-        });
-    }
+    $('.dark-mode').on('click', function () {
+        $('body').toggleClass('dark');
+        localStorage.setItem('darkMode', $('body').hasClass('dark'));
+    });
+    
     if (localStorage.getItem('darkMode') === 'true') {
-        document.body.classList.add('dark');
+        $('body').addClass('dark');
     }
 
     // ════════════════════════════════════════════════════════════
-    // SHARED UTILS
+    // SHARED UTILITIES
     // ════════════════════════════════════════════════════════════
     function escapeHtml(text) {
         if (!text) return '';

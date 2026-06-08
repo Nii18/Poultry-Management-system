@@ -550,7 +550,7 @@
     color: #1e293b;
 }
 
-
+.page-header { overflow: visible !important; }
     </style>
 
     @stack('styles')
