@@ -14,6 +14,10 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->enum('priority', ['high', 'medium', 'low'])->default('medium');
             $table->enum('status', ['pending', 'in_progress', 'completed'])->default('pending');
+           
+            $table->enum('window', ['morning', 'afternoon', 'evening'])->nullable();
+            
+            
             $table->date('due_date');
             $table->time('start_time')->nullable();
             $table->time('end_time')->nullable();

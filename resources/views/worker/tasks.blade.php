@@ -1,10 +1,20 @@
+{{-- resources/views/worker/tasks.blade.php --}}
 @extends('layouts.master')
 
 @section('title', 'My Tasks')
 
+@php
+$windowMeta = [
+    'morning'   => ['label' => 'Morning',   'icon' => 'fa-sun',       'time' => '06:00 – 12:00', 'color' => 'warning'],
+    'afternoon' => ['label' => 'Afternoon',  'icon' => 'fa-cloud-sun', 'time' => '12:00 – 17:00', 'color' => 'primary'],
+    'evening'   => ['label' => 'Evening',    'icon' => 'fa-moon',      'time' => '17:00 – 22:00', 'color' => 'info'],
+];
+@endphp
+
 @section('content')
 <div class="container-fluid px-4">
-    <!-- Page Header -->
+
+    {{-- Page Header --}}
     <div class="page-header">
         <div class="row align-items-center">
             <div class="col">
@@ -14,7 +24,19 @@
                     </div>
                     <div>
                         <h1 class="page-title mb-1">My Tasks</h1>
-                        <p class="page-description text-muted mb-0">View and manage your daily assignments</p>
+                        <p class="page-description text-muted mb-0">
+                            {{ now()->format('l, d F Y') }} &middot;
+                            @if($currentWindow !== 'none')
+                                <span class="badge bg-success-soft text-success">
+                                    <span class="pulse-dot me-1"></span>
+                                    {{ ucfirst($currentWindow) }} window active
+                                </span>
+                            @else
+                                <span class="badge bg-secondary-soft text-secondary">
+                                    Outside working hours
+                                </span>
+                            @endif
+                        </p>
                     </div>
                 </div>
             </div>
@@ -29,22 +51,22 @@
         </div>
     </div>
 
-    <!-- Stats -->
+    {{-- Stats Row --}}
     <div class="row g-4 mb-4">
-        <div class="col-md-4">
+        <div class="col-6 col-md-3">
             <div class="stat-card">
                 <div class="stat-card-body">
                     <div class="stat-card-icon bg-primary-soft">
                         <i class="fas fa-list-check text-primary"></i>
                     </div>
                     <div class="stat-card-info">
-                        <span class="stat-card-label">Today's Tasks</span>
-                        <h3 class="stat-card-value" id="totalTasks">{{ $todayTasks->count() }}</h3>
+                        <span class="stat-card-label">Total Today</span>
+                        <h3 class="stat-card-value" id="stat-total">{{ $stats['total'] }}</h3>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-6 col-md-3">
             <div class="stat-card">
                 <div class="stat-card-body">
                     <div class="stat-card-icon bg-success-soft">
@@ -52,333 +74,363 @@
                     </div>
                     <div class="stat-card-info">
                         <span class="stat-card-label">Completed</span>
-                        <h3 class="stat-card-value" id="completedTasks">{{ $todayTasks->where('status', 'completed')->count() }}</h3>
+                        <h3 class="stat-card-value text-success" id="stat-completed">{{ $stats['completed'] }}</h3>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-6 col-md-3">
+            <div class="stat-card">
+                <div class="stat-card-body">
+                    <div class="stat-card-icon bg-danger-soft">
+                        <i class="fas fa-exclamation-circle text-danger"></i>
+                    </div>
+                    <div class="stat-card-info">
+                        <span class="stat-card-label">Missed</span>
+                        <h3 class="stat-card-value text-danger" id="stat-missed">{{ $stats['missed'] }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
             <div class="stat-card">
                 <div class="stat-card-body">
                     <div class="stat-card-icon bg-info-soft">
                         <i class="fas fa-chart-line text-info"></i>
                     </div>
                     <div class="stat-card-info">
-                        <span class="stat-card-label">Completion Rate</span>
-                        <h3 class="stat-card-value" id="completionRate">
-                            @php
-                                $total = $todayTasks->count();
-                                $completed = $todayTasks->where('status', 'completed')->count();
-                                $rate = $total > 0 ? round(($completed / $total) * 100) : 0;
-                            @endphp
-                            {{ $rate }}%
-                        </h3>
+                        <span class="stat-card-label">30-day Rate</span>
+                        <h3 class="stat-card-value">{{ $stats['completion_rate'] }}%</h3>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Today's Tasks -->
-    <div class="card shadow-sm border-0">
+    {{-- Time Window Cards --}}
+    @foreach($windowMeta as $windowKey => $meta)
+    @php
+        $assignments = $grouped[$windowKey];
+        $isActive    = $currentWindow === $windowKey;
+        $isPast      = match($currentWindow) {
+            'afternoon' => $windowKey === 'morning',
+            'evening'   => in_array($windowKey, ['morning', 'afternoon']),
+            'none'      => true,
+            default     => false,
+        };
+        $total       = $assignments->count();
+        $doneCount   = $assignments->where('status', 'completed')->count();
+        $pct         = $total > 0 ? round(($doneCount / $total) * 100) : 0;
+    @endphp
+
+    <div class="card shadow-sm border-0 mb-4 window-card {{ $isActive ? 'window-active' : '' }} {{ $isPast ? 'window-past' : '' }}"
+         id="window-{{ $windowKey }}">
+
+        {{-- Card Header --}}
         <div class="card-header bg-white border-0 py-3">
-            <div class="row align-items-center">
-                <div class="col">
-                    <h5 class="card-title mb-0 fw-semibold">
-                        <i class="fas fa-tasks me-2 text-primary"></i>Today's Tasks
-                    </h5>
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+
+                {{-- Left: title + badges --}}
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    @if($isActive)
+                        <span class="pulse-dot" aria-label="Active"></span>
+                    @endif
+                    <i class="fas {{ $meta['icon'] }} text-{{ $meta['color'] }}" aria-hidden="true"></i>
+                    <h5 class="card-title mb-0 fw-semibold">{{ $meta['label'] }}</h5>
+                    <span class="badge bg-secondary-soft text-secondary">
+                        <i class="fas fa-clock me-1"></i>{{ $meta['time'] }}
+                    </span>
+                    @if($isActive)
+                        <span class="badge bg-success text-white">
+                            <span class="pulse-dot me-1" style="width:6px;height:6px;"></span>Live
+                        </span>
+                    @elseif($isPast)
+                        <span class="badge bg-secondary text-white">Past</span>
+                    @else
+                        <span class="badge bg-{{ $meta['color'] }}-soft text-{{ $meta['color'] }}">Upcoming</span>
+                    @endif
                 </div>
-                <div class="col-auto">
-                    <div class="btn-group">
-                        <button class="btn btn-sm btn-outline-primary active" data-filter="all">All</button>
-                        <button class="btn btn-sm btn-outline-primary" data-filter="pending">Pending</button>
-                        <button class="btn btn-sm btn-outline-success" data-filter="completed">Completed</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="card-body" id="tasksList">
-            @forelse($todayTasks as $task)
-            <div class="task-item d-flex justify-content-between align-items-center p-3 mb-2 bg-light rounded-3 {{ $task->status === 'completed' ? 'completed-task' : '' }}" data-task-id="{{ $task->id }}" data-status="{{ $task->status }}">
-                <div class="d-flex align-items-center gap-3">
-                    <input type="checkbox" class="task-checkbox form-check-input" 
-                           data-task-id="{{ $task->id }}" 
-                           {{ $task->status === 'completed' ? 'checked' : '' }}>
-                    <div>
-                        <h6 class="mb-1 {{ $task->status === 'completed' ? 'text-decoration-line-through text-muted' : '' }}">
-                            {{ $task->title }}
-                        </h6>
-                        <small class="text-muted">{{ $task->description }}</small>
-                        @if($task->start_time && $task->end_time)
-                            <div class="mt-1">
-                                <span class="badge bg-secondary-soft text-secondary">
-                                    <i class="fas fa-clock me-1"></i>{{ \Carbon\Carbon::parse($task->start_time)->format('h:i A') }} - {{ \Carbon\Carbon::parse($task->end_time)->format('h:i A') }}
-                                </span>
-                            </div>
-                        @endif
-                    </div>
-                </div>
-                <span class="badge bg-{{ $task->priority === 'high' ? 'danger' : ($task->priority === 'medium' ? 'warning' : 'info') }}-soft">
-                    {{ ucfirst($task->priority) }} Priority
+
+                {{-- Right: counter --}}
+                <span class="text-muted small window-counter" data-window="{{ $windowKey }}">
+                    {{ $doneCount }} / {{ $total }} done
                 </span>
             </div>
+
+            {{-- Progress bar --}}
+            @if($total > 0)
+            <div class="progress mt-2" style="height: 5px; border-radius: 3px;">
+                <div class="progress-bar bg-{{ $meta['color'] }} window-progress"
+                     data-window="{{ $windowKey }}"
+                     style="width: {{ $pct }}%; transition: width 0.4s ease;">
+                </div>
+            </div>
+            @endif
+        </div>
+
+        {{-- Task List --}}
+        <div class="card-body pt-2">
+            @forelse($assignments->sortBy(fn($a) => $a->task?->start_time) as $assignment)
+            @php
+                $task = $assignment->task;
+                $pColors = ['high' => 'danger', 'medium' => 'warning', 'low' => 'info'];
+                $pc = $pColors[$task?->priority] ?? 'secondary';
+            @endphp
+
+            <div class="task-item d-flex justify-content-between align-items-center p-3 mb-2 rounded-3 status-{{ $assignment->status }}"
+                 data-assignment-id="{{ $assignment->id }}"
+                 data-window="{{ $windowKey }}">
+
+                <div class="d-flex align-items-center gap-3">
+
+                    {{-- Status indicator --}}
+                    @if($assignment->status === 'missed')
+                        <span class="flex-shrink-0" title="Missed">
+                            <i class="fas fa-times-circle text-danger fs-5"></i>
+                        </span>
+                    @else
+                        <input type="checkbox"
+                               class="task-checkbox form-check-input flex-shrink-0"
+                               data-assignment-id="{{ $assignment->id }}"
+                               data-window="{{ $windowKey }}"
+                               {{ $assignment->status === 'completed' ? 'checked' : '' }}>
+                    @endif
+
+                    {{-- Task details --}}
+                    <div>
+                        <h6 class="mb-1 task-title
+                            {{ $assignment->status === 'completed' ? 'text-decoration-line-through text-muted' : '' }}
+                            {{ $assignment->status === 'missed' ? 'text-muted fst-italic' : '' }}">
+                            {{ $task?->title ?? 'Untitled task' }}
+                        </h6>
+
+                        @if($task?->description)
+                            <small class="text-muted d-block mb-1">{{ $task->description }}</small>
+                        @endif
+
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            {{-- Time window badge --}}
+                            @if($task?->start_time && $task?->end_time)
+                            <span class="badge bg-secondary-soft text-secondary">
+                                <i class="fas fa-clock me-1"></i>
+                                {{ \Carbon\Carbon::parse($task->start_time)->format('h:i A') }}
+                                – {{ \Carbon\Carbon::parse($task->end_time)->format('h:i A') }}
+                            </span>
+                            @endif
+
+                            {{-- Completed at --}}
+                            @if($assignment->status === 'completed' && $assignment->completed_at)
+                            <span class="badge bg-success-soft text-success">
+                                <i class="fas fa-check me-1"></i>
+                                Done at {{ $assignment->completed_at->format('h:i A') }}
+                            </span>
+                            @endif
+
+                            {{-- Missed label --}}
+                            @if($assignment->status === 'missed')
+                            <span class="badge bg-danger-soft text-danger">
+                                <i class="fas fa-clock me-1"></i>Window closed — not completed
+                            </span>
+                            @endif
+
+                            {{-- In progress --}}
+                            @if($assignment->status === 'in_progress')
+                            <span class="badge bg-primary-soft text-primary">
+                                <i class="fas fa-spinner me-1"></i>In progress
+                            </span>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Priority badge --}}
+                <span class="badge bg-{{ $pc }}-soft text-{{ $pc }} flex-shrink-0 ms-2">
+                    {{ ucfirst($task?->priority ?? 'medium') }}
+                </span>
+
+            </div>
             @empty
-            <div class="text-center py-5">
-                <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
-                <h5 class="text-muted">All caught up!</h5>
-                <p class="text-muted">No tasks assigned for today.</p>
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-calendar-check fa-2x mb-3 opacity-50"></i>
+                <p class="mb-0 small">No tasks scheduled for this window.</p>
             </div>
             @endforelse
         </div>
     </div>
+    @endforeach
 
-    <!-- Pending Tasks (Overdue) -->
-    @if($pendingTasks->count() > 0)
-    <div class="card shadow-sm border-0 mt-4">
-        <div class="card-header bg-white border-0 py-3 bg-danger-soft">
-            <h5 class="card-title mb-0 fw-semibold">
-                <i class="fas fa-exclamation-triangle me-2 text-danger"></i>Overdue Tasks
-            </h5>
-        </div>
-        <div class="card-body">
-            @foreach($pendingTasks as $task)
-            <div class="task-item d-flex justify-content-between align-items-center p-3 mb-2 bg-light rounded-3 border-start border-danger border-3">
-                <div class="d-flex align-items-center gap-3">
-                    <input type="checkbox" class="task-checkbox-pending form-check-input" 
-                           data-task-id="{{ $task->id }}">
-                    <div>
-                        <h6 class="mb-1">{{ $task->title }}</h6>
-                        <small class="text-muted">{{ $task->description }}</small>
-                        <div class="mt-1">
-                            <span class="badge bg-danger-soft text-danger">
-                                <i class="fas fa-calendar-times me-1"></i>Due: {{ \Carbon\Carbon::parse($task->due_date)->format('d M Y') }}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <span class="badge bg-{{ $task->priority === 'high' ? 'danger' : ($task->priority === 'medium' ? 'warning' : 'info') }}-soft">
-                    {{ ucfirst($task->priority) }} Priority
-                </span>
-            </div>
-            @endforeach
-        </div>
-    </div>
-    @endif
-
-    <!-- Upcoming Tasks -->
-    @if($upcomingTasks->count() > 0)
-    <div class="card shadow-sm border-0 mt-4">
-        <div class="card-header bg-white border-0 py-3">
-            <h5 class="card-title mb-0 fw-semibold">
-                <i class="fas fa-calendar-week me-2 text-primary"></i>Upcoming Tasks (Next 7 Days)
-            </h5>
-        </div>
-        <div class="card-body">
-            @foreach($upcomingTasks as $task)
-            <div class="task-item d-flex justify-content-between align-items-center p-3 mb-2 bg-light rounded-3">
-                <div class="d-flex align-items-center gap-3">
-                    <div>
-                        <h6 class="mb-1">{{ $task->title }}</h6>
-                        <small class="text-muted">{{ $task->description }}</small>
-                        <div class="mt-1">
-                            <span class="badge bg-info-soft text-info">
-                                <i class="fas fa-calendar-alt me-1"></i>{{ \Carbon\Carbon::parse($task->due_date)->format('d M Y') }}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <span class="badge bg-{{ $task->priority === 'high' ? 'danger' : ($task->priority === 'medium' ? 'warning' : 'info') }}-soft">
-                    {{ ucfirst($task->priority) }} Priority
-                </span>
-            </div>
-            @endforeach
-        </div>
-    </div>
-    @endif
 </div>
-
-@push('scripts')
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<script>
-    // Update stats function
-    function updateStats() {
-        const totalTasks = {{ $todayTasks->count() }};
-        const completedTasks = document.querySelectorAll('.task-checkbox:checked').length;
-        const rate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-        
-        document.getElementById('totalTasks').textContent = totalTasks;
-        document.getElementById('completedTasks').textContent = completedTasks;
-        document.getElementById('completionRate').textContent = rate + '%';
-    }
-    
-    // Handle today's task checkboxes
-    document.querySelectorAll('.task-checkbox').forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            const taskId = this.dataset.taskId;
-            const isChecked = this.checked;
-            const status = isChecked ? 'completed' : 'pending';
-            const taskDiv = this.closest('.task-item');
-            
-            // Update UI immediately
-            if (isChecked) {
-                taskDiv.classList.add('completed-task');
-                const label = taskDiv.querySelector('h6');
-                if (label) label.classList.add('text-decoration-line-through', 'text-muted');
-            } else {
-                taskDiv.classList.remove('completed-task');
-                const label = taskDiv.querySelector('h6');
-                if (label) label.classList.remove('text-decoration-line-through', 'text-muted');
-            }
-            
-            // Update stats
-            updateStats();
-            
-            // Send AJAX request to update database
-            fetch(`/worker/tasks/${taskId}/status`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ status: status })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && isChecked) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Task Completed!',
-                        text: 'Great job! Keep up the good work.',
-                        timer: 1500,
-                        showConfirmButton: false,
-                        toast: true,
-                        position: 'top-end'
-                    });
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                // Revert UI on error
-                if (isChecked) {
-                    this.checked = false;
-                    taskDiv.classList.remove('completed-task');
-                    const label = taskDiv.querySelector('h6');
-                    if (label) label.classList.remove('text-decoration-line-through', 'text-muted');
-                } else {
-                    this.checked = true;
-                    taskDiv.classList.add('completed-task');
-                    const label = taskDiv.querySelector('h6');
-                    if (label) label.classList.add('text-decoration-line-through', 'text-muted');
-                }
-                updateStats();
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'Failed to update task status'
-                });
-            });
-        });
-    });
-    
-    // Handle pending tasks checkboxes (overdue)
-    document.querySelectorAll('.task-checkbox-pending').forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            const taskId = this.dataset.taskId;
-            const isChecked = this.checked;
-            const status = isChecked ? 'completed' : 'pending';
-            const taskDiv = this.closest('.task-item');
-            
-            if (isChecked) {
-                taskDiv.style.opacity = '0.6';
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Task Completed!',
-                    text: 'Better late than never! Great job catching up.',
-                    timer: 2000,
-                    showConfirmButton: false,
-                    toast: true,
-                    position: 'top-end'
-                });
-            }
-            
-            fetch(`/worker/tasks/${taskId}/status`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ status: status })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && isChecked) {
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1000);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                this.checked = false;
-                taskDiv.style.opacity = '1';
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'Failed to update task status'
-                });
-            });
-        });
-    });
-    
-    // Filter buttons
-    document.querySelectorAll('.btn-group .btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const filter = this.dataset.filter;
-            document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            
-            const tasks = document.querySelectorAll('.task-item');
-            tasks.forEach(task => {
-                const isCompleted = task.classList.contains('completed-task');
-                if (filter === 'all') {
-                    task.style.display = 'flex';
-                } else if (filter === 'pending') {
-                    task.style.display = isCompleted ? 'none' : 'flex';
-                } else if (filter === 'completed') {
-                    task.style.display = isCompleted ? 'flex' : 'none';
-                }
-            });
-        });
-    });
-</script>
-@endpush
+@endsection
 
 @push('styles')
 <style>
+    /* ── Window card ────────────────────────────────────────────── */
+    .window-card {
+        border-left: 3px solid transparent;
+        transition: opacity 0.3s ease;
+    }
+    .window-active {
+        border-left: 3px solid #10b981 !important;
+    }
+    .window-past {
+        opacity: 0.82;
+    }
+
+    /* ── Pulse dot ──────────────────────────────────────────────── */
+    .pulse-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        background: #10b981;
+        border-radius: 50%;
+        animation: pulse-anim 1.5s ease-in-out infinite;
+        vertical-align: middle;
+    }
+    @keyframes pulse-anim {
+        0%, 100% { opacity: 1;   transform: scale(1);   }
+        50%       { opacity: 0.4; transform: scale(1.5); }
+    }
+
+    /* ── Task item base ─────────────────────────────────────────── */
     .task-item {
-        transition: all 0.3s ease;
+        background: #f8fafc;
+        transition: background 0.2s ease, box-shadow 0.2s ease;
     }
     .task-item:hover {
-        background: white !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        background: #ffffff !important;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
     }
-    .completed-task {
-        opacity: 0.7;
-        background: #f1f5f9 !important;
+
+    /* ── Task item states ───────────────────────────────────────── */
+    .task-item.status-completed {
+        background: #f0fdf4 !important;
     }
+    .task-item.status-missed {
+        background: #fff5f5 !important;
+        opacity: 0.85;
+    }
+    .task-item.status-in_progress {
+        background: #eff6ff !important;
+        border-left: 3px solid #3b82f6;
+        border-radius: 0 0.5rem 0.5rem 0 !important;
+    }
+
+    /* ── Checkbox ───────────────────────────────────────────────── */
     .task-checkbox {
         width: 20px;
         height: 20px;
         cursor: pointer;
-    }
-    .task-checkbox-pending {
-        width: 20px;
-        height: 20px;
-        cursor: pointer;
+        flex-shrink: 0;
     }
 </style>
 @endpush
 
-@endsection
+@push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+(function () {
+    const CSRF = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+
+    // ── Checkbox handler ───────────────────────────────────────────────────
+    document.querySelectorAll('.task-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', function () {
+            const assignmentId = this.dataset.assignmentId;
+            const windowKey    = this.dataset.window;
+            const checked      = this.checked;
+            const newStatus    = checked ? 'completed' : 'pending';
+            const taskItem     = this.closest('.task-item');
+            const titleEl      = taskItem.querySelector('.task-title');
+
+            // Optimistic UI update
+            applyStatusClass(taskItem, newStatus);
+            toggleStrikethrough(titleEl, checked);
+            updateWindowProgress(windowKey);
+            updateGlobalStats();
+
+            // Persist to server
+            fetch(`/worker/tasks/${assignmentId}/status`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': CSRF,
+                    'Accept'      : 'application/json',
+                },
+                body: JSON.stringify({ status: newStatus }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) throw new Error(data.message ?? 'Unknown error');
+
+                if (checked) {
+                    Swal.fire({
+                        icon             : 'success',
+                        title            : 'Task completed!',
+                        text             : 'Great job. Keep it up.',
+                        timer            : 1500,
+                        showConfirmButton : false,
+                        toast            : true,
+                        position         : 'top-end',
+                    });
+                }
+            })
+            .catch(err => {
+                console.error('Task update failed:', err);
+
+                // Revert optimistic update
+                const revertStatus = checked ? 'pending' : 'completed';
+                this.checked = !checked;
+                applyStatusClass(taskItem, revertStatus);
+                toggleStrikethrough(titleEl, !checked);
+                updateWindowProgress(windowKey);
+                updateGlobalStats();
+
+                Swal.fire({
+                    icon  : 'error',
+                    title : 'Update failed',
+                    text  : 'Could not save task status. Please try again.',
+                });
+            });
+        });
+    });
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    function applyStatusClass(el, status) {
+        el.classList.remove('status-pending', 'status-completed', 'status-in_progress', 'status-missed');
+        el.classList.add(`status-${status}`);
+    }
+
+    function toggleStrikethrough(el, apply) {
+        if (!el) return;
+        if (apply) {
+            el.classList.add('text-decoration-line-through', 'text-muted');
+        } else {
+            el.classList.remove('text-decoration-line-through', 'text-muted');
+        }
+    }
+
+    function updateWindowProgress(windowKey) {
+        const card = document.getElementById(`window-${windowKey}`);
+        if (!card) return;
+
+        const allItems  = card.querySelectorAll('.task-item');
+        const total     = allItems.length;
+        const completed = card.querySelectorAll('.task-checkbox:checked').length;
+        const pct       = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        const bar     = card.querySelector('.window-progress');
+        const counter = card.querySelector('.window-counter');
+
+        if (bar)     bar.style.width = pct + '%';
+        if (counter) counter.textContent = `${completed} / ${total} done`;
+    }
+
+    function updateGlobalStats() {
+        const totalCompleted = document.querySelectorAll('.task-checkbox:checked').length;
+        const statEl = document.getElementById('stat-completed');
+        if (statEl) statEl.textContent = totalCompleted;
+    }
+
+})();
+</script>
+@endpush

@@ -11,7 +11,7 @@
             <div class="stat-card">
                 <div class="stat-card-body">
                     <div class="stat-card-icon bg-primary-soft">
-                        <i class="fas fa-chicken text-primary"></i>
+                        <i class="fas fa-play-circle text-success"></i>
                     </div>
                     <div class="stat-card-info">
                         <span class="stat-card-label">Active Flocks</span>

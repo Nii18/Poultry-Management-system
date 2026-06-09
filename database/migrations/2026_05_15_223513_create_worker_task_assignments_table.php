@@ -14,6 +14,8 @@ return new class extends Migration
             $table->foreignId('assigned_to')->constrained('users')->onDelete('cascade');
             $table->date('assignment_date');
             $table->boolean('is_completed')->default(false);
+            $table->enum('status', ['pending', 'in_progress', 'completed', 'missed'])->default('pending');
+            $table->string('notes')->nullable();
             $table->timestamp('completed_at')->nullable();
             $table->timestamps();
             

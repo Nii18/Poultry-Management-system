@@ -12,7 +12,7 @@ class UserController extends Controller
 {
     public function index()
     {
-        $users = User::latest()->paginate(20);
+        $users = User::latest()->get();
         return view('admin.users.index', compact('users'));
     }
 
@@ -24,19 +24,22 @@ class UserController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-            'password' => ['required', 'confirmed', Rules\Password::defaults()],
-            'role' => ['required', 'in:admin,pharmacist,staff'],
-            'is_admin' => ['sometimes', 'boolean'],
+            'name'      => ['required', 'string', 'max:255'],
+            'email'     => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            'password'  => ['required', 'confirmed', Rules\Password::defaults()],
+            'role'      => ['required', 'in:admin,manager,worker,veterinarian,accountant'],
+            'phone'     => ['nullable', 'string', 'max:20'],
+            'farm_name' => ['nullable', 'string', 'max:255'],
         ]);
 
         User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'role' => $request->role,
-            'is_admin' => $request->role === 'admin' ? true : false,
+            'name'      => $request->name,
+            'email'     => $request->email,
+            'password'  => Hash::make($request->password),
+            'role'      => $request->role,
+            'phone'     => $request->phone,
+            'farm_name' => $request->farm_name,
+            'is_active' => true,
         ]);
 
         return redirect()->route('admin.users.index')
@@ -51,18 +54,23 @@ class UserController extends Controller
     public function update(Request $request, User $user)
     {
         $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email,' . $user->id],
-            'password' => ['nullable', 'confirmed', Rules\Password::defaults()],
-            'role' => ['required', 'in:admin,pharmacist,staff'],
+            'name'      => ['required', 'string', 'max:255'],
+            'email'     => ['required', 'string', 'email', 'max:255', 'unique:users,email,' . $user->id],
+            'password'  => ['nullable', 'confirmed', Rules\Password::defaults()],
+            'role'      => ['required', 'in:admin,manager,worker,veterinarian,accountant'],
+            'phone'     => ['nullable', 'string', 'max:20'],
+            'farm_name' => ['nullable', 'string', 'max:255'],
+            'is_active' => ['sometimes', 'boolean'],
         ]);
 
-        $user->name = $request->name;
-        $user->email = $request->email;
-        $user->role = $request->role;
-        $user->is_admin = $request->role === 'admin' ? true : false;
+        $user->name      = $request->name;
+        $user->email     = $request->email;
+        $user->role      = $request->role;
+        $user->phone     = $request->phone;
+        $user->farm_name = $request->farm_name;
+        $user->is_active = $request->boolean('is_active');
 
-        if ($request->password) {
+        if ($request->filled('password')) {
             $user->password = Hash::make($request->password);
         }
 
@@ -74,15 +82,52 @@ class UserController extends Controller
 
     public function destroy(User $user)
     {
-        // Prevent deleting yourself
         if ($user->id === auth()->id()) {
             return redirect()->back()
                 ->with('error', 'You cannot delete your own account.');
+        }
+
+        if ($user->role === 'admin' && User::where('role', 'admin')->count() <= 1) {
+            return redirect()->back()
+                ->with('error', 'Cannot delete the last admin account.');
         }
 
         $user->delete();
 
         return redirect()->route('admin.users.index')
             ->with('success', 'User deleted successfully!');
+    }
+
+    public function toggleStatus(User $user)
+    {
+        if ($user->id === auth()->id()) {
+            // Return JSON error for AJAX, redirect for non-AJAX
+            if (request()->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You cannot deactivate your own account.',
+                ], 403);
+            }
+
+            return redirect()->back()
+                ->with('error', 'You cannot deactivate your own account.');
+        }
+
+        $user->update(['is_active' => !$user->is_active]);
+
+        $status = $user->is_active ? 'activated' : 'deactivated';
+
+        // AJAX request — return JSON so JS can update the DOM without a page reload
+        if (request()->ajax()) {
+            return response()->json([
+                'success'   => true,
+                'is_active' => $user->is_active,
+                'message'   => "{$user->name} {$status} successfully.",
+            ]);
+        }
+
+        // Fallback for non-AJAX (e.g. direct form submit)
+        return redirect()->route('admin.users.index')
+            ->with('success', "User {$user->name} {$status} successfully.");
     }
 }

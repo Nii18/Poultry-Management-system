@@ -141,13 +141,14 @@ class User extends Authenticatable
         }
     }
 
-    public function getWeeklyLoginCount()
+    public function getWeeklyLoginCount(): int
     {
+        // Tracks via last_login_at; for a proper count you'd need a login_logs table.
+        // For now, return 1 if they logged in this week, 0 otherwise.
         if (!$this->last_login_at) {
             return 0;
         }
-        
-        return $this->last_login_at->greaterThan(now()->startOfWeek()) ? 1 : 0;
+        return $this->last_login_at->greaterThanOrEqualTo(now()->startOfWeek()) ? 1 : 0;
     }
 
     // ==================== USER SWITCHING METHODS ====================

@@ -131,8 +131,8 @@
                         @forelse($history as $record)
                         <tr>
                             <td>{{ \Carbon\Carbon::parse($record->date)->format('M d, Y') }}</td>
-                            <td>{{ $record->clock_in ? \Carbon\Carbon::parse($record->clock_in)->format('h:i A') : '-' }}</td>
-                            <td>{{ $record->clock_out ? \Carbon\Carbon::parse($record->clock_out)->format('h:i A') : 'Not clocked out' }}</td>
+                            <td>{{ $record->clock_in ? \Carbon\Carbon::createFromFormat('H:i:s', $record->clock_in)->format('h:i A') : '-' }}</td>
+                            <td>{{ $record->clock_out ? \Carbon\Carbon::createFromFormat('H:i:s', $record->clock_out)->format('h:i A') : 'Not clocked out' }}</td>
                             <td>{{ $record->hours_worked ? number_format($record->hours_worked, 1) : '-' }}</td>
                             <td>
                                 <span class="badge {{ $record->status === 'present' ? 'bg-success-soft text-success' : ($record->status === 'late' ? 'bg-warning-soft text-warning' : 'bg-secondary-soft text-secondary') }}">

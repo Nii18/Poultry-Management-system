@@ -24,8 +24,8 @@ class WorkerAttendance extends Model
     
     protected $casts = [
         'date' => 'date',
-        'clock_in' => 'datetime',
-        'clock_out' => 'datetime',
+        'clock_in' => 'string',   
+        'clock_out' => 'string', 
         'approved_at' => 'datetime'
     ];
     
@@ -87,13 +87,17 @@ class WorkerAttendance extends Model
                 </span>';
     }
     
-    public function getFormattedClockInAttribute()
+       public function getFormattedClockInAttribute()
     {
-        return $this->clock_in ? \Carbon\Carbon::parse($this->clock_in)->format('h:i A') : '--:--';
+    return $this->clock_in 
+        ? \Carbon\Carbon::createFromFormat('H:i:s', $this->clock_in)->format('h:i A') 
+        : '--:--';
     }
     
     public function getFormattedClockOutAttribute()
-    {
-        return $this->clock_out ? \Carbon\Carbon::parse($this->clock_out)->format('h:i A') : '--:--';
+    { 
+    return $this->clock_out 
+        ? \Carbon\Carbon::createFromFormat('H:i:s', $this->clock_out)->format('h:i A') 
+        : '--:--';
     }
 }
