@@ -158,33 +158,40 @@
     let clockedIn = {{ $isClockedIn ? 'true' : 'false' }};
     
     function clockIn() {
-        fetch('{{ route("worker.clock-in") }}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                'Accept': 'application/json'
+    fetch('{{ route("worker.clock-in") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            clockedIn = true;
+            document.getElementById('clockInBtn').classList.add('d-none');
+            document.getElementById('clockOutBtn').classList.remove('d-none');
+            document.getElementById('clockStatus').innerHTML = '<i class="fas fa-play-circle me-1"></i> Working';
+            document.getElementById('clockStatus').className = 'badge bg-success';
+
+            // Immediately dismiss the "please clock in" warning, if present
+            const warningAlert = document.getElementById('workerFlashWarning');
+            if (warningAlert) {
+                const instance = bootstrap.Alert.getOrCreateInstance(warningAlert);
+                instance.close();
             }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                clockedIn = true;
-                document.getElementById('clockInBtn').classList.add('d-none');
-                document.getElementById('clockOutBtn').classList.remove('d-none');
-                document.getElementById('clockStatus').innerHTML = '<i class="fas fa-play-circle me-1"></i> Working';
-                document.getElementById('clockStatus').className = 'badge bg-success';
-                
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Clocked In!',
-                    text: `You clocked in at ${data.time}`,
-                    timer: 2000,
-                    showConfirmButton: false,
-                    toast: true,
-                    position: 'top-end'
-                });
-            } else {
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Clocked In!',
+                text: `You clocked in at ${data.time}`,
+                timer: 2000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
+        } else {
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',

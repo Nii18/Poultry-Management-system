@@ -133,15 +133,7 @@
                 </form>
 
                 {{-- Live-search dropdown with improved UI --}}
-                <div class="dropdown-menu dropdown-menu-animated dropdown-lg" id="search-dropdown">
-                    <div class="dropdown-header noti-title d-flex justify-content-between align-items-center">
-                        <h6 class="text-overflow mb-0" id="search-results-count">
-                            <i class="fas fa-search me-1"></i> Start typing to search...
-                        </h6>
-                        <button type="button" class="btn-close btn-sm" id="closeSearchDropdown"></button>
-                    </div>
-                    <div id="search-results" style="max-height: 420px; overflow-y: auto;"></div>
-                </div>
+               
             </li>
         </div>
 

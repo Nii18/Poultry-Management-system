@@ -582,6 +582,21 @@
     </div>
     @endif
 
+
+    @if(session('warning'))
+    <div class="alert alert-warning alert-dismissible fade show m-3" role="alert" id="workerFlashWarning">
+        <i class="fas fa-exclamation-triangle me-2"></i>{{ session('warning') }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+@endif
+
+@if(session('success'))
+    <div class="alert alert-success alert-dismissible fade show m-3" role="alert" id="workerFlashSuccess">
+        <i class="fas fa-check-circle me-2"></i>{{ session('success') }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+@endif
+
     <!-- Loader -->
     <div class="loader-wrapper">
         <div class="loader">
@@ -1005,6 +1020,18 @@ function attachCalendarEvents() {
         clearInterval(cycleTimer);
     });
 })();
+
+
+ // Auto-dismiss any flash alert after 4 seconds, anywhere in the app
+ document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('#workerFlashWarning, #workerFlashSuccess').forEach(function (alertEl) {
+            setTimeout(function () {
+                const alertInstance = bootstrap.Alert.getOrCreateInstance(alertEl);
+                alertInstance.close();
+            }, 4000);
+        });
+    });
+    
     </script>
 
     @stack('scripts')

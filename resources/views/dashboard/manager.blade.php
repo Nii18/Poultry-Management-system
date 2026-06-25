@@ -218,13 +218,13 @@
                                             data-bs-toggle="modal" 
                                             data-bs-target="#viewFlockModal"
                                             title="View Details">
-                                        <i class="fas fa-eye"></i>
+                                        <i class="fas fa-eye"></i> View
                                     </button>
                                     @if(($flock->status ?? '') === 'active')
                                         <a href="{{ route('daily-logs.create', ['flock_id' => $flock->id]) }}" 
                                            class="btn btn-sm btn-outline-success"
                                            title="Add Daily Log">
-                                            <i class="fas fa-clipboard-list"></i>
+                                            <i class="fas fa-clipboard-list"></i>Add Daily Log
                                         </a>
                                     @endif
                                 </div>

@@ -149,6 +149,8 @@
       </li>
       @endif
 
+
+
       <!-- ==================== HEALTH (Admin, Manager, Veterinarian) ==================== -->
       @if(in_array(auth()->user()->role ?? '', ['admin','manager','veterinarian']))
       <li class="sidebar-list has-submenu">
@@ -187,6 +189,49 @@
         </ul>
       </li>
       @endif
+
+
+      @if(in_array(auth()->user()->role ?? '', ['admin','manager']))
+      <li class="sidebar-main-title">
+        <h5 class="sidebar-title f-w-700">Team Management</h5>
+    </li>
+    
+    <li class="sidebar-list has-submenu">
+        <i class="fa-solid fa-thumbtack"></i>
+        <a class="sidebar-link" href="javascript:void(0)">
+            <svg class="stroke-icon">
+                <use href="{{asset('assets/svg/iconly-sprite.svg#Document')}}"></use>
+            </svg>
+            <h6>Task Management</h6>
+            <i class="fa-solid fa-chevron-right submenu-arrow"></i>
+        </a>
+        <ul class="sidebar-submenu">
+            <li><a href="{{ route('manager.tasks') }}">All Tasks</a></li>
+            <li><a href="{{ route('manager.tasks') }}" 
+              class="..."
+              onclick="
+                if(document.getElementById('createTaskModal')) {
+                  event.preventDefault();
+                  new bootstrap.Modal(document.getElementById('createTaskModal')).show();
+                }
+              ">
+              Assign new task
+           </a></li>
+        </ul>
+    </li>
+    
+    <li class="sidebar-list">
+        <i class="fa-solid fa-thumbtack"></i>
+        <a class="sidebar-link" href="{{ route('manager.attendance') }}">
+            <svg class="stroke-icon">
+                <use href="{{asset('assets/svg/iconly-sprite.svg#Calendar')}}"></use>
+            </svg>
+            <h6>Attendance Reports</h6>
+        </a>
+    </li>
+
+  @endif
+
 
       <!-- ==================== FINANCE (Admin, Manager, Accountant) ==================== -->
       @if(in_array(auth()->user()->role ?? '', ['admin','manager','accountant']))

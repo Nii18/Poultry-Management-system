@@ -13,16 +13,31 @@
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
+
+        <style>
+            .bg-poultry {
+                background-image: url('/assets/images/sss.jpg');
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+            }
+        </style>
     </head>
     <body class="font-sans text-gray-900 antialiased">
-        <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 bg-gray-100 dark:bg-gray-900">
-            <div>
+        <div class="bg-poultry min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 relative">
+
+            <!-- Dark overlay -->
+            <div class="absolute inset-0 bg-black/50"></div>
+
+            <!-- Logo -->
+            <div class="relative z-10">
                 <a href="/">
-                    <x-application-logo class="w-20 h-20 fill-current text-gray-500" />
+                    <x-application-logo class="w-20 h-20 fill-current text-white" />
                 </a>
             </div>
 
-            <div class="w-full sm:max-w-md mt-6 px-6 py-4 bg-white dark:bg-gray-800 shadow-md overflow-hidden sm:rounded-lg">
+            <!-- Form card -->
+            <div class="relative z-10 w-full sm:max-w-md mt-6 px-6 py-4 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm shadow-md overflow-hidden sm:rounded-lg">
                 {{ $slot }}
             </div>
         </div>

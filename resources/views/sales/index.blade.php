@@ -351,7 +351,7 @@
                         ];
                     @endphp
                     <div class="table-responsive">
-                        <table class="table table-hover align-middle">
+                        <table class="table table-hover align-middle stat-table">
                             <thead class="table-light">
                                 <tr>
                                     <th>Product</th>
@@ -374,13 +374,13 @@
                                     <tr>
                                         <td>
                                             <span class="me-2 fs-5">{{ $pm['icon'] }}</span>
-                                            <strong>{{ $pm['label'] }}</strong>
+                                            <strong class="stat-cell-text">{{ $pm['label'] }}</strong>
                                         </td>
                                         <td class="text-center">
-                                            <span class="badge bg-light text-dark border">{{ $group->count() }}</span>
+                                            <span class="badge bg-success text-dark border">{{ $group->count() }}</span>
                                         </td>
-                                        <td class="text-end fw-semibold">{{ number_format($grpQty, 2) }}</td>
-                                        <td class="text-end">₵{{ number_format($grpAvgPrice, 2) }}</td>
+                                        <td class="text-end fw-semibold stat-cell-text">{{ number_format($grpQty, 2) }}</td>
+                                        <td class="text-end stat-cell-text">₵{{ number_format($grpAvgPrice, 2) }}</td>
                                         <td class="text-end">
                                             <strong class="text-success">₵{{ number_format($grpRevenue, 2) }}</strong>
                                         </td>
@@ -389,7 +389,7 @@
                                                 <div class="progress flex-grow-1" style="height:7px;">
                                                     <div class="progress-bar bg-success" style="width:{{ $grpPct }}%"></div>
                                                 </div>
-                                                <span class="small text-muted fw-semibold">{{ number_format($grpPct,1) }}%</span>
+                                                <span class="small stat-cell-text fw-semibold">{{ number_format($grpPct,1) }}%</span>
                                             </div>
                                         </td>
                                     </tr>
@@ -397,12 +397,12 @@
                             </tbody>
                             <tfoot class="table-light">
                                 <tr>
-                                    <th>TOTAL</th>
-                                    <th class="text-center">{{ $sales->count() }}</th>
-                                    <th class="text-end">{{ number_format($totalQuantity,2) }}</th>
+                                    <th class="stat-cell-text">TOTAL</th>
+                                    <th class="text-center stat-cell-text">{{ $sales->count() }}</th>
+                                    <th class="text-end stat-cell-text">{{ number_format($totalQuantity,2) }}</th>
                                     <th></th>
                                     <th class="text-end text-success">₵{{ number_format($totalRevenue,2) }}</th>
-                                    <th>100%</th>
+                                    <th class="stat-cell-text">100%</th>
                                 </tr>
                             </tfoot>
                         </table>
@@ -422,7 +422,7 @@
                     <div class="stat-modal-icon"><i class="fas fa-boxes"></i></div>
                     <div>
                         <h5 class="modal-title text-white fw-bold mb-0">Quantity Sold — Stock Breakdown</h5>
-                        <p class="text-white-50 small mb-0">Units sold per product with remaining stock estimates</p>
+                        <p class="text-white-50 small mb-0">Units sold per product with remaining stock from produce records</p>
                     </div>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -454,20 +454,25 @@
                     <h6 class="stat-section-title mb-3"><i class="fas fa-layer-group me-2 text-primary"></i>Qty Sold per Product &amp; Stock Status</h6>
                     @php
                         $qtyByProduct = $sales->getCollection()->groupBy('product_type');
-                        // Stock reference capacities (from flock data where available)
-                        $stockRef = [
-                            'eggs_tray'      => ['unit'=>'trays',    'capacity'=> null],
-                            'eggs_crate'     => ['unit'=>'crates',   'capacity'=> null],
-                            'eggs_box'       => ['unit'=>'boxes',    'capacity'=> null],
-                            'live_bird'      => ['unit'=>'birds',    'capacity'=> $flocks->sum('current_count')],
-                            'meat_kg'        => ['unit'=>'kg',       'capacity'=> null],
-                            'breeding_stock' => ['unit'=>'animals',  'capacity'=> null],
-                            'manure'         => ['unit'=>'bags',     'capacity'=> null],
-                            'other'          => ['unit'=>'units',    'capacity'=> null],
+                        // Unit label per sale type (purely cosmetic, no capacity guessing here)
+                        $unitLabels = [
+                            'eggs_tray'      => 'trays',
+                            'eggs_crate'     => 'crates',
+                            'eggs_box'       => 'boxes',
+                            'eggs'           => 'eggs',
+                            'live_bird'      => 'birds',
+                            'meat_kg'        => 'kg',
+                            'meat'           => 'kg',
+                            'breeding_stock' => 'animals',
+                            'manure'         => 'bags',
+                            'other'          => 'units',
                         ];
+                        // $saleAvailability comes from the controller — real remaining
+                        // stock per sale type, derived from FarmProduce records via
+                        // the same logic used to validate new sales (no guessing).
                     @endphp
                     <div class="table-responsive">
-                        <table class="table table-hover align-middle">
+                        <table class="table table-hover align-middle stat-table">
                             <thead class="table-light">
                                 <tr>
                                     <th>Product</th>
@@ -482,41 +487,49 @@
                                 @foreach($qtyByProduct as $type => $group)
                                     @php
                                         $pm   = $productMeta[$type] ?? ['icon'=>'📦','label'=>ucfirst(str_replace('_',' ',$type))];
-                                        $ref  = $stockRef[$type]    ?? ['unit'=>'units','capacity'=>null];
+                                        $unit = $unitLabels[$type] ?? 'units';
                                         $sold = $group->sum('quantity');
                                         $avg  = $group->avg('quantity');
                                         $max  = $group->max('quantity');
-                                        $cap  = $ref['capacity'];
-                                        $rem  = $cap !== null ? max(0, $cap - $sold) : null;
-                                        $pctUsed = ($cap && $cap > 0) ? min(($sold / $cap) * 100, 100) : null;
+
+                                        // Real remaining stock, in this sale type's own units,
+                                        // straight from FarmProduce-backed availability.
+                                        $remaining   = $saleAvailability[$type] ?? null;
+                                        $hasRealData = $remaining !== null;
+                                        // Use sold + remaining as the "capacity" baseline for the
+                                        // progress bar so it reflects produced stock, not a guess.
+                                        $capacity = $hasRealData ? ($sold + $remaining) : null;
+                                        $pctUsed  = ($capacity && $capacity > 0) ? min(($sold / $capacity) * 100, 100) : null;
                                     @endphp
                                     <tr>
                                         <td>
                                             <span class="me-2 fs-5">{{ $pm['icon'] }}</span>
-                                            <strong>{{ $pm['label'] }}</strong>
-                                            <div class="small text-muted">{{ $ref['unit'] }}</div>
+                                            <strong class="stat-cell-text">{{ $pm['label'] }}</strong>
+                                            <div class="small stat-cell-muted">{{ $unit }}</div>
                                         </td>
                                         <td class="text-center">
-                                            <span class="badge bg-light text-dark border">{{ $group->count() }}</span>
+                                            <span class="badge bg-info text-dark border">{{ $group->count() }}</span>
                                         </td>
                                         <td class="text-end fw-bold text-primary">{{ number_format($sold, 2) }}</td>
-                                        <td class="text-end text-muted">{{ number_format($avg, 2) }}</td>
+                                        <td class="text-end stat-cell-muted">{{ number_format($avg, 2) }}</td>
                                         <td class="text-end">
                                             <span class="badge bg-info-soft text-info">{{ number_format($max, 2) }}</span>
                                         </td>
-                                        <td style="min-width:200px">
-                                            @if($rem !== null)
+                                        <td style="min-width:220px">
+                                            @if($hasRealData)
                                                 <div class="d-flex align-items-center gap-2">
                                                     <div class="progress flex-grow-1" style="height:7px;">
                                                         <div class="progress-bar {{ $pctUsed > 80 ? 'bg-danger' : ($pctUsed > 50 ? 'bg-warning' : 'bg-success') }}"
                                                              style="width:{{ $pctUsed }}%"></div>
                                                     </div>
-                                                    <span class="small fw-semibold text-muted">{{ number_format($rem,0) }} left</span>
+                                                    <span class="small fw-semibold stat-cell-text">{{ number_format($remaining,2) }} {{ $unit }} left</span>
                                                 </div>
-                                                <div class="small text-muted mt-1">{{ number_format($pctUsed,1) }}% of {{ number_format($cap,0) }} capacity sold</div>
+                                                @if($capacity > 0)
+                                                <div class="small stat-cell-muted mt-1">{{ number_format($pctUsed,1) }}% of {{ number_format($capacity,2) }} {{ $unit }} produced sold</div>
+                                                @endif
                                             @else
                                                 <span class="badge bg-secondary-soft text-secondary">
-                                                    <i class="fas fa-infinity me-1"></i>Made to order / variable
+                                                    <i class="fas fa-question-circle me-1"></i>No produce record for this type
                                                 </span>
                                             @endif
                                         </td>
@@ -525,8 +538,8 @@
                             </tbody>
                             <tfoot class="table-light">
                                 <tr>
-                                    <th>TOTAL</th>
-                                    <th class="text-center">{{ $sales->count() }}</th>
+                                    <th class="stat-cell-text">TOTAL</th>
+                                    <th class="text-center stat-cell-text">{{ $sales->count() }}</th>
                                     <th class="text-end text-primary">{{ number_format($totalQuantity,2) }}</th>
                                     <th colspan="3"></th>
                                 </tr>
@@ -535,9 +548,10 @@
                     </div>
                     <div class="alert alert-info border-0 mt-3 small">
                         <i class="fas fa-info-circle me-2"></i>
-                        <strong>Stock note:</strong> Live Bird remaining stock is derived from active flock headcount.
-                        Other product types (eggs, manure, meat) are produced continuously and shown as variable.
-                        For precise stock levels, refer to the Inventory or Daily Logs section.
+                        <strong>Stock note:</strong> "Stock Available" is calculated from your Produce Inventory
+                        (quantity produced minus damaged minus already sold), converted into each product's sale
+                        unit. If a product type shows no produce record, record produce for it under Produce
+                        Inventory to see live stock figures here.
                     </div>
                 </div>
             </div>
@@ -595,7 +609,7 @@
                 <div class="p-4">
                     <h6 class="stat-section-title mb-3"><i class="fas fa-clock me-2 text-info"></i>Transaction Timeline — Date &amp; Time of Each Sale</h6>
                     <div class="table-responsive">
-                        <table class="table table-hover align-middle table-sm">
+                        <table class="table table-hover align-middle table-sm stat-table">
                             <thead class="table-light">
                                 <tr>
                                     <th>#</th>
@@ -623,38 +637,38 @@
                                         $payIcon = $payIcons[$sale->payment_method] ?? '💳';
                                     @endphp
                                     <tr>
-                                        <td class="text-muted small">{{ $txCount }}</td>
+                                        <td class="small stat-cell-muted">{{ $txCount }}</td>
                                         <td>
-                                            <div class="fw-semibold small">{{ $sale->created_at->format('d M Y') }}</div>
-                                            <div class="text-muted" style="font-size:.7rem;">
+                                            <div class="fw-semibold small stat-cell-text">{{ $sale->created_at->format('d M Y') }}</div>
+                                            <div class="stat-cell-muted" style="font-size:.7rem;">
                                                 <i class="fas fa-clock me-1"></i>{{ $sale->created_at->format('H:i:s') }}
                                             </div>
                                         </td>
                                         <td>
-                                            <span class="badge bg-light text-dark border small">
+                                            <span class="fw-semibold small stat-cell-text">
                                                 {{ $sale->sale_date->format('d M Y') }}
                                             </span>
                                         </td>
                                         <td>
                                             <span class="me-1">{{ $pm['icon'] }}</span>
-                                            <span class="small fw-semibold">{{ $pm['label'] }}</span>
+                                            <span class="small fw-semibold stat-cell-text">{{ $pm['label'] }}</span>
                                         </td>
-                                        <td class="text-end small">{{ number_format($sale->quantity,2) }}</td>
-                                        <td class="text-end small">₵{{ number_format($sale->unit_price,2) }}</td>
+                                        <td class="text-end small stat-cell-text">{{ number_format($sale->quantity,2) }}</td>
+                                        <td class="text-end small stat-cell-text">₵{{ number_format($sale->unit_price,2) }}</td>
                                         <td class="text-end">
                                             <strong class="text-success small">₵{{ number_format($sale->total_amount,2) }}</strong>
                                         </td>
-                                        <td class="small text-muted">{{ $sale->customer_name ?? 'Walk-in' }}</td>
-                                        <td class="small">{{ $payIcon }} {{ $sale->payment_method ? ucfirst(str_replace('_',' ',$sale->payment_method)) : '—' }}</td>
-                                        <td class="small text-muted">{{ $sale->creator->name ?? '—' }}</td>
+                                        <td class="small stat-cell-muted">{{ $sale->customer_name ?? 'Walk-in' }}</td>
+                                        <td class="small stat-cell-text">{{ $payIcon }} {{ $sale->payment_method ? ucfirst(str_replace('_',' ',$sale->payment_method)) : '—' }}</td>
+                                        <td class="small stat-cell-muted">{{ $sale->creator->name ?? '—' }}</td>
                                     </tr>
                                 @empty
-                                    <tr><td colspan="10" class="text-center py-4 text-muted">No transactions in this period</td></tr>
+                                    <tr><td colspan="10" class="text-center py-4 stat-cell-muted">No transactions in this period</td></tr>
                                 @endforelse
                             </tbody>
                             <tfoot class="table-light">
                                 <tr>
-                                    <th colspan="6" class="text-end">Period Total:</th>
+                                    <th colspan="6" class="text-end stat-cell-text">Period Total:</th>
                                     <th class="text-end text-success">₵{{ number_format($totalRevenue,2) }}</th>
                                     <th colspan="3"></th>
                                 </tr>
@@ -662,7 +676,7 @@
                         </table>
                     </div>
                     @if($sales->hasPages())
-                    <p class="text-muted small mt-2">
+                    <p class="small mt-2 stat-cell-muted">
                         <i class="fas fa-info-circle me-1"></i>
                         Showing {{ $sales->firstItem() }}–{{ $sales->lastItem() }} of {{ $sales->total() }} transactions.
                         Use the main table pagination to view more.
@@ -732,7 +746,7 @@
                         $grpByType = $sales->getCollection()->groupBy('product_type');
                     @endphp
                     <div class="table-responsive mb-4">
-                        <table class="table table-hover align-middle">
+                        <table class="table table-hover align-middle stat-table">
                             <thead class="table-light">
                                 <tr>
                                     <th>Product</th>
@@ -751,33 +765,31 @@
                                         $rev  = $grp->sum('total_amount');
                                         $qty  = $grp->sum('quantity');
                                         $txs  = $grp->count();
-                                        // Live bird remaining from flock headcount
-                                        $remaining = null;
-                                        if ($type === 'live_bird') {
-                                            $remaining = $flocks->sum('current_count');
-                                        }
+                                        // Real remaining stock for this sale type, from FarmProduce-backed
+                                        // availability (same source as the Quantity modal & stock checks).
+                                        $remaining = $saleAvailability[$type] ?? null;
                                     @endphp
                                     <tr>
                                         <td>
                                             <span class="me-2 fs-5">{{ $pm['icon'] }}</span>
                                             <div class="d-inline-block">
-                                                <div class="fw-semibold">{{ $pm['label'] }}</div>
-                                                <div class="small text-muted">{{ $pm['desc'] }}</div>
+                                                <div class="fw-semibold stat-cell-text">{{ $pm['label'] }}</div>
+                                                <div class="small stat-cell-muted">{{ $pm['desc'] }}</div>
                                             </div>
                                         </td>
                                         <td><span class="badge bg-secondary-soft text-secondary">{{ $pm['unit'] }}</span></td>
-                                        <td class="text-center"><span class="badge bg-light text-dark border">{{ $txs }}</span></td>
+                                        <td class="text-center"><span class="badge bg-info text-dark border">{{ $txs }}</span></td>
                                         <td class="text-end fw-semibold text-primary">{{ number_format($qty,2) }}</td>
                                         <td class="text-end fw-semibold text-success">₵{{ number_format($rev,2) }}</td>
                                         <td>
                                             @if($remaining !== null)
                                                 <span class="badge {{ $remaining > 0 ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger' }}">
                                                     <i class="fas fa-{{ $remaining > 0 ? 'check' : 'times' }} me-1"></i>
-                                                    {{ number_format($remaining,0) }} birds in flock
+                                                    {{ number_format($remaining,2) }} {{ $pm['unit'] }} left
                                                 </span>
                                             @else
                                                 <span class="badge bg-info-soft text-info">
-                                                    <i class="fas fa-recycle me-1"></i>Continuous / variable
+                                                    <i class="fas fa-question-circle me-1"></i>No produce record
                                                 </span>
                                             @endif
                                         </td>
@@ -797,8 +809,8 @@
                                 <div class="d-flex align-items-center gap-2 p-3 rounded-3 border bg-light">
                                     <span class="fs-4">{{ $pm['icon'] }}</span>
                                     <div>
-                                        <div class="fw-semibold text-muted">{{ $pm['label'] }}</div>
-                                        <div class="small text-muted">{{ $pm['desc'] }} — <em>no sales this period</em></div>
+                                        <div class="fw-semibold stat-cell-muted">{{ $pm['label'] }}</div>
+                                        <div class="small stat-cell-muted">{{ $pm['desc'] }} — <em>no sales this period</em></div>
                                     </div>
                                 </div>
                             </div>
@@ -987,6 +999,20 @@
     .stat-section-title { font-size: .82rem; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; color: #64748b; }
     .progress { background-color: #e2e8f0; border-radius: 10px; }
 
+    /*
+     * ── Stat modal table text visibility fix ──
+     * The stat-card detail modals (Revenue/Quantity/Transactions/Products)
+     * render plain text inside <td>/<span>/<div> elements that don't match
+     * the broader ".modal-body p" / ".form-label" override below, so they
+     * were inheriting a light/white color from elsewhere in the theme and
+     * becoming unreadable on the white table background. These two classes
+     * give every value cell in those modals an explicit, theme-proof color
+     * so visibility no longer depends on inheritance.
+     */
+    .stat-table td,
+    .stat-table th { color: #1e293b; }
+    .stat-cell-text { color: #1e293b !important; }
+    .stat-cell-muted { color: #64748b !important; }
 
     label, .form-label, .modal-body, .modal-body p,
     .detail-section p, .detail-value, .bg-light p,

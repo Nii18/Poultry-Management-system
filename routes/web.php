@@ -47,7 +47,7 @@ Route::get('/', function () {
 Route::middleware(['auth'])->group(function () {
     
     // Dashboard - accessible by all authenticated users
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard', [DashboardController::class, 'index']) ->name('dashboard')->middleware(['clocked.in']);
     Route::get('/dashboard/charts', [DashboardController::class, 'getChartsData'])->name('dashboard.charts');
     Route::get('/reports/total-animals', [DashboardController::class, 'totalAnimals'])->name('reports.total-animals');
     
@@ -119,17 +119,17 @@ Route::prefix('produces')->name('produces.')->group(function () {
 
 
 // ==================== WORKER ROUTES ====================
-Route::prefix('worker')->name('worker.')->middleware(['auth', 'role:admin,worker'])->group(function () {
+Route::prefix('worker')->name('worker.')->middleware(['auth', 'role:admin,worker', 'clocked.in'])->group(function () {
     // Tasks
     Route::get('/tasks', [WorkerController::class, 'tasks'])->name('tasks');
     Route::put('/tasks/{id}/status', [WorkerController::class, 'updateTaskStatus'])->name('tasks.update-status');
-    
+
     // Attendance
     Route::get('/attendance', [WorkerController::class, 'attendance'])->name('attendance');
     Route::post('/clock-in', [WorkerController::class, 'clockIn'])->name('clock-in');
     Route::post('/clock-out', [WorkerController::class, 'clockOut'])->name('clock-out');
     Route::get('/attendance-data', [WorkerController::class, 'getAttendanceData'])->name('attendance-data');
-    
+
     // Help
     Route::get('/help', [WorkerController::class, 'help'])->name('help');
 });

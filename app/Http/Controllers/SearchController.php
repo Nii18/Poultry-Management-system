@@ -279,7 +279,6 @@ class SearchController extends Controller
         }
 
         // ── Expenses ────────────────────────────────────────────
-        // Sidebar: Finance section → admin, manager, accountant
         if (in_array('expenses', $scopes)) {
             try {
                 $expenses = Expense::where(function ($q) use ($query) {
@@ -317,7 +316,6 @@ class SearchController extends Controller
         }
 
         // ── Sales & Revenue ─────────────────────────────────────
-        // Sidebar: "Sales & Revenue" → admin, manager, accountant
         if (in_array('sales', $scopes)) {
             try {
                 $sales = Sale::with('flock')
@@ -341,7 +339,6 @@ class SearchController extends Controller
                             'name'     => $label . ($sale->customer_name ? ' — ' . $sale->customer_name : ''),
                             'amount'   => $sale->total_amount,
                             'type'     => 'sale',
-                            'url'      => route('sales.index'),   // show/edit page if you have one, else index
                             'icon'     => 'fa-chart-line',
                             'color'    => 'success',
                             'subtitle' => 'Flock #' . ($sale->flock->flock_number ?? 'N/A')
@@ -358,7 +355,6 @@ class SearchController extends Controller
         }
 
         // ── Breeding Records ────────────────────────────────────
-        // Sidebar: Breeding → admin, manager, worker
         if (in_array('breeding_records', $scopes)) {
             try {
                 if (class_exists(\App\Models\BreedingRecord::class)) {
@@ -408,8 +404,6 @@ class SearchController extends Controller
 
     // ──────────────────────────────────────────────────────────────
     // Resolve + validate scopes from the request.
-    // Intersect requested scopes with what the role is allowed —
-    // so devtools edits can't expose data outside the role's scope.
     // ──────────────────────────────────────────────────────────────
     private function resolveScopes(?string $rawScopes = ''): array
     {
