@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Vaccination;
 use App\Models\Flock;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +13,7 @@ use Carbon\Carbon;
 
 class VaccinationController extends Controller
 {
+    public function __construct(protected NotificationService $notifications) {}
     /**
      * Display a listing of vaccinations
      */
@@ -91,6 +93,16 @@ class VaccinationController extends Controller
                 'notes' => $request->notes,
                 'administered_by' => auth()->id()
             ]);
+
+            $flock = Flock::find($vaccination->flock_id);
+            $this->notifications->notifyVaccinationRecorded(
+                $vaccination->flock_id,
+                $flock->flock_number ?? 'Unknown',
+                $vaccination->vaccine_name,
+                $vaccination->disease_target,
+                $vaccination->birds_vaccinated ?? 0,
+                auth()->user()->name
+            );
             
             return redirect()->route('vaccinations.show', $vaccination->id)
                 ->with('success', 'Vaccination recorded successfully');
@@ -413,6 +425,16 @@ public function storeVaccination(Request $request)
     } catch (\Exception $e) {
         return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
     }
+
+    $flock = Flock::find($vaccination->flock_id);
+$this->notifications->notifyVaccinationRecorded(
+    $vaccination->flock_id,
+    $flock->flock_number ?? 'Unknown',
+    $vaccination->vaccine_name,
+    $vaccination->disease_target,
+    $vaccination->birds_vaccinated ?? 0,
+    auth()->user()->name
+);
 }
 
 }

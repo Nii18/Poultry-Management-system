@@ -605,9 +605,9 @@
     </div>
 
     <!-- Scroll Top -->
-    <div class="tap-top">
-        <i class="iconly-Arrow-Up icli"></i>
-    </div>
+<div class="tap-top">
+    <i class="fas fa-arrow-up"></i>
+</div>
 
     <!-- Page Wrapper -->
     <div class="page-wrapper compact-wrapper" id="pageWrapper">

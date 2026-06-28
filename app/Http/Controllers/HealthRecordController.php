@@ -7,6 +7,7 @@ use App\Models\HealthRecord;
 use App\Models\Treatment;
 use App\Models\Vaccination;
 use App\Models\Flock;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -14,6 +15,7 @@ use Carbon\Carbon;
 
 class HealthRecordController extends Controller
 {
+    public function __construct(protected NotificationService $notifications) {}
     /**
      * Display a listing of health records
      */
@@ -104,6 +106,16 @@ class HealthRecordController extends Controller
                 'notes' => $request->notes,
                 'recorded_by' => auth()->id()
             ]);
+
+            $flock = \App\Models\Flock::find($record->flock_id);
+            $this->notifications->notifyHealthRecord(
+                $record->flock_id,
+                $flock->flock_number ?? 'Unknown',
+                $record->record_type,
+                $record->severity,
+                $record->affected_count,
+                $record->condition
+            );
             
             return redirect()->route('health-records.show', $record->id)
                 ->with('success', 'Health record created successfully');
@@ -329,6 +341,16 @@ public function storeHealthRecord(Request $request)
     } catch (\Exception $e) {
         return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
     }
+
+    $flock = Flock::find($record->flock_id);
+$this->notifications->notifyHealthRecord(
+    $record->flock_id,
+    $flock->flock_number ?? 'Unknown',
+    $record->record_type,
+    $record->severity,
+    $record->affected_count,
+    $record->condition
+);
 }
 
 /**

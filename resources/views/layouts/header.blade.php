@@ -101,7 +101,9 @@
 
         {{-- ── Centred title ──────────────────────────────────────── --}}
         <div class="header-center text-center">
-            <h4 class="mb-0 f-w-700 system-title">Poultry Management System</h4>
+            <h4 class="mb-0 f-w-700 system-title">
+                {{ DB::table('settings')->where('key', 'farm_name')->value('value') ?? config('app.name') }}
+            </h4>
             <p class="mb-0 small text-muted">Enterprise Poultry Farm Solution</p>
         </div>
 

@@ -11,7 +11,7 @@
             </div>
             <div class="col-sm-6 col-12">
                 <ol class="breadcrumb">
-                    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}"><i class="iconly-Home icli svg-color"></i></a></li>
+                    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}"><i class="fas fa-home"></i></i></a></li>
                     <li class="breadcrumb-item">Dashboard</li>
                     <li class="breadcrumb-item active">Livestock</li>
                 </ol>

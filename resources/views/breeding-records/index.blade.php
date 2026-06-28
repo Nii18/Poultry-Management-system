@@ -109,7 +109,7 @@
             <div class="filter-section mb-4 p-3 bg-light rounded-3">
                 <div class="row align-items-end g-3">
                     <div class="col-md-5">
-                        <label class="form-label fw-semibold mb-2">
+                        <label class="form-label fw-semibold mb-2 text-dark">
                             <i class="fas fa-paw me-1 text-muted"></i>Flock (Female)
                         </label>
                         <select name="flock_id" class="form-select" id="flockFilter">
@@ -122,8 +122,8 @@
                         </select>
                     </div>
                     <div class="col-md-5">
-                        <label class="form-label fw-semibold mb-2">
-                            <i class="fas fa-flag-checkered me-1 text-muted"></i>Status
+                        <label class="form-label fw-semibold mb-2 text-dark">
+                            <i class="fas fa-paw me-1 text-muted"></i>Status
                         </label>
                         <select name="status" class="form-select" id="statusFilter">
                             <option value="all" {{ request('status', 'all') == 'all' ? 'selected' : '' }}>All Records</option>
@@ -682,6 +682,8 @@
         padding: 0.75rem;
         border-left: 3px solid #0d6e4f;
     }
+
+
 </style>
 @endpush
 

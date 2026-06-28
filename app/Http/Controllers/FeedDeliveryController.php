@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 
 use App\Models\FeedDelivery;
 use App\Models\FeedType;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +13,8 @@ use Carbon\Carbon;
 
 class FeedDeliveryController extends Controller
 {
+
+    public function __construct(protected NotificationService $notifications) {}
     /**
      * Display a listing of feed deliveries
      */
@@ -88,6 +91,9 @@ class FeedDeliveryController extends Controller
             ]);
             
             DB::commit();
+
+            $this->notifications->checkAndNotifyLowStock();
+
             
             // Replace with:
 if ($request->expectsJson()) {

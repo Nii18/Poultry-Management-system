@@ -13,6 +13,7 @@ class WorkerAttendance extends Model
     protected $fillable = [
         'user_id',
         'date',
+        'window',
         'clock_in',
         'clock_out',
         'hours_worked',
@@ -70,6 +71,17 @@ class WorkerAttendance extends Model
     {
         return $query->where('status', 'absent');
     }
+
+    /**
+     * A session that's been clocked in but not yet clocked out. Since a
+     * worker can have several sessions per day now, "currently clocked in"
+     * means "has an open session", not "has a row for today" — there may
+     * also be earlier, already-closed sessions for the same day.
+     */
+    public function scopeOpenSession($query)
+    {
+        return $query->whereNotNull('clock_in')->whereNull('clock_out');
+    }
     
     // Accessors
     public function getStatusBadgeAttribute()
@@ -85,6 +97,16 @@ class WorkerAttendance extends Model
         return '<span class="badge bg-' . ($colors[$this->status] ?? 'secondary') . '-soft text-' . ($colors[$this->status] ?? 'secondary') . '">
                     ' . ucfirst(str_replace('_', ' ', $this->status)) . '
                 </span>';
+    }
+
+    /**
+     * Human-readable window label for display, e.g. in the attendance
+     * history table. Null window (clocked in outside all three task
+     * windows) renders as a plain dash rather than blank.
+     */
+    public function getWindowLabelAttribute(): string
+    {
+        return $this->window ? ucfirst($this->window) : '—';
     }
     
        public function getFormattedClockInAttribute()

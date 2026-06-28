@@ -83,7 +83,7 @@
             <div class="col-sm-6 col-12">
                 <ol class="breadcrumb">
                     <li class="breadcrumb-item">
-                        <a href="{{ route('dashboard') }}"><i class="iconly-Home icli svg-color"></i></a>
+                        <a href="{{ route('dashboard') }}"><i class="fas fa-home"></i></a>
                     </li>
                     <li class="breadcrumb-item">Daily Logs</li>
                     <li class="breadcrumb-item active">All Logs</li>

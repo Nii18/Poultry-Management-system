@@ -77,7 +77,7 @@
         <i class="fa-solid fa-thumbtack"></i>
         <a class="sidebar-link" href="javascript:void(0)">
           <svg class="stroke-icon">
-            <use href="{{asset('assets/svg/iconly-sprite.svg#Clipboard')}}"></use>
+            <use href="{{asset('assets/svg/iconly-sprite.svg#Paper')}}"></use>
           </svg>
           <h6>Daily Operations</h6>
           <i class="fa-solid fa-chevron-right submenu-arrow"></i>
@@ -177,7 +177,7 @@
         <i class="fa-solid fa-thumbtack"></i>
         <a class="sidebar-link" href="javascript:void(0)">
           <svg class="stroke-icon">
-            <use href="{{asset('assets/svg/iconly-sprite.svg#Heart')}}"></use>
+            <use href="{{asset('assets/svg/iconly-sprite.svg#heart')}}"></use>
           </svg>
           <h6>Breeding</h6>
           <i class="fa-solid fa-chevron-right submenu-arrow"></i>

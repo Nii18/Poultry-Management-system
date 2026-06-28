@@ -75,6 +75,7 @@ class FlockController extends Controller
             'species_id'      => 'required|exists:species,id',
             'house_id'        => 'required|exists:houses,id',
             'breed_variety'   => 'required|string|max:255',
+            'sex'             => 'required|in:male,female',
             'start_date'      => 'required|date|before_or_equal:today',
             'initial_count'   => 'required|integer|min:1',
             'source'          => 'nullable|string|max:255',
@@ -116,6 +117,7 @@ class FlockController extends Controller
                 'house_id'          => $request->house_id,
                 'flock_number'      => $flockNumber,
                 'breed_variety'     => $request->breed_variety,
+                'sex'               => $request->sex,
                 'start_date'        => $request->start_date,
                 'initial_count'     => $initialCount,
                 'current_count'     => $initialCount,
@@ -250,6 +252,7 @@ class FlockController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'breed_variety'     => 'required|string|max:255',
+            'sex'               => 'required|in:male,female',
             'house_id'          => 'required|exists:houses,id',
             'production_type'   => 'required|in:meat,eggs,milk,live_sale,dual_purpose',
             'is_breeding_stock' => 'nullable|boolean',
@@ -274,6 +277,7 @@ class FlockController extends Controller
         try {
             $flock->update([
                 'breed_variety'     => $request->breed_variety,
+                'sex'               => $request->sex,
                 'house_id'          => $request->house_id,
                 'production_type'   => $request->production_type,
                 'is_breeding_stock' => $request->is_breeding_stock ?? false,
@@ -474,6 +478,7 @@ class FlockController extends Controller
                     'house_name'        => $flock->house->name        ?? 'N/A',
                     'house_code'        => $flock->house->house_code  ?? 'N/A',
                     'breed_variety'     => $flock->breed_variety,
+                    'sex'               => $flock->sex,
                     'start_date'        => $flock->start_date->format('Y-m-d'),
                     'source'            => $flock->source,
                     'initial_count'     => $flock->initial_count,
@@ -506,6 +511,7 @@ class FlockController extends Controller
                 'flock'   => [
                     'id'                => $flock->id,
                     'breed_variety'     => $flock->breed_variety,
+                    'sex'               => $flock->sex,
                     'house_id'          => $flock->house_id,
                     'production_type'   => $flock->production_type,
                     'is_breeding_stock' => $flock->is_breeding_stock,

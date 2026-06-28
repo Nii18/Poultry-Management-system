@@ -175,39 +175,34 @@
             document.getElementById('clockStatus').innerHTML = '<i class="fas fa-play-circle me-1"></i> Working';
             document.getElementById('clockStatus').className = 'badge bg-success';
 
-            // Immediately dismiss the "please clock in" warning, if present
             const warningAlert = document.getElementById('workerFlashWarning');
             if (warningAlert) {
-                const instance = bootstrap.Alert.getOrCreateInstance(warningAlert);
-                instance.close();
+                bootstrap.Alert.getOrCreateInstance(warningAlert).close();
             }
 
             Swal.fire({
                 icon: 'success',
                 title: 'Clocked In!',
-                text: `You clocked in at ${data.time}`,
-                timer: 2000,
+                text: `You clocked in at ${data.time}. Taking you to your tasks...`,
+                timer: 1300,
                 showConfirmButton: false,
                 toast: true,
                 position: 'top-end'
             });
+
+            // Don't leave them stuck on attendance — send them into their actual work
+            setTimeout(() => {
+                window.location.href = '{{ route("worker.tasks") }}';
+            }, 1100);
         } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: data.message
-                });
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: 'Failed to clock in. Please try again.'
-            });
-        });
-    }
+            Swal.fire({ icon: 'error', title: 'Error', text: data.message });
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to clock in. Please try again.' });
+    });
+}
     
     function clockOut() {
         fetch('{{ route("worker.clock-out") }}', {

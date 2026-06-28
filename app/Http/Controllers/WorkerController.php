@@ -44,11 +44,15 @@ class WorkerController extends Controller
     /**
      * Update a WorkerTaskAssignment status.
      * Workers call this by assignment ID, not task ID.
+     *
+     * Accepts status: pending | in_progress | completed
+     * Accepts undo: true (re-opens a completed task within the grace period)
      */
     public function updateTaskStatus(Request $request, int $id)
     {
         try {
-            $assignment = WorkerTaskAssignment::where('id', $id)
+            $assignment = WorkerTaskAssignment::with('task')
+                ->where('id', $id)
                 ->where('assigned_to', auth()->id())
                 ->firstOrFail();
 
@@ -63,9 +67,41 @@ class WorkerController extends Controller
                 ], 422);
             }
 
-            $assignment->status = $request->status;
+            $newStatus = $request->status;
 
-            if ($request->status === 'completed') {
+            // Block completing a task whose time window hasn't opened yet.
+            // This is the authoritative check — the UI hides/disables the
+            // checkbox for locked tasks, but that's purely cosmetic without
+            // this server-side guard (a raw fetch() call could otherwise
+            // bypass it from either the dashboard or the tasks page).
+            if ($newStatus === 'completed') {
+                $isLocked = $this->taskService->isWindowLocked($assignment->task?->window);
+
+                if ($isLocked) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This task is locked until its time window opens.',
+                    ], 422);
+                }
+            }
+
+            // Grace-period enforcement for undo (reverting from completed → pending)
+            // Allow undo only within 15 minutes of completion
+            if ($newStatus !== 'completed' && $assignment->status === 'completed') {
+                $gracePeriodExpired = $assignment->completed_at
+                    && $assignment->completed_at->lt(now()->subMinutes(15));
+
+                if ($gracePeriodExpired) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Undo window has expired (15 minutes after completion).',
+                    ], 422);
+                }
+            }
+
+            $assignment->status = $newStatus;
+
+            if ($newStatus === 'completed') {
                 $assignment->is_completed = true;
                 $assignment->completed_at = now();
             } else {
@@ -75,10 +111,16 @@ class WorkerController extends Controller
 
             $assignment->save();
 
+            // Return completed_at so the frontend can show/hide the undo button
             return response()->json([
-                'success'    => true,
-                'message'    => 'Task updated successfully',
-                'assignment' => $assignment,
+                'success'      => true,
+                'message'      => 'Task updated successfully',
+                'assignment'   => [
+                    'id'           => $assignment->id,
+                    'status'       => $assignment->status,
+                    'is_completed' => $assignment->is_completed,
+                    'completed_at' => $assignment->completed_at?->toIso8601String(),
+                ],
             ]);
 
         } catch (\Exception $e) {
@@ -96,36 +138,57 @@ class WorkerController extends Controller
         $userId = auth()->id();
         $today  = Carbon::today();
 
-        $todayAttendance = WorkerAttendance::where('user_id', $userId)
-            ->whereDate('date', $today)
+        // "Currently clocked in" now means "has an open session" (any
+        // window), not "has a row for today" — there may be earlier,
+        // already-closed sessions for today as well.
+        $openSession = WorkerAttendance::where('user_id', $userId)
+            ->openSession()
             ->first();
 
-        $isClockedIn = $todayAttendance && !$todayAttendance->clock_out;
+        $isClockedIn = (bool) $openSession;
 
+        // History is now one row per SESSION, most recent first.
         $history = WorkerAttendance::where('user_id', $userId)
             ->whereDate('date', '>=', $today->copy()->subDays(30))
             ->orderBy('date', 'desc')
+            ->orderBy('clock_in', 'desc')
+            ->get();
+
+        $monthSessions = WorkerAttendance::where('user_id', $userId)
+            ->whereDate('date', '>=', $today->copy()->startOfMonth())
             ->get();
 
         $stats = [
-            'days_worked'  => WorkerAttendance::where('user_id', $userId)
-                ->where('status', 'present')
-                ->whereDate('date', '>=', $today->copy()->startOfMonth())
+            // Distinct CALENDAR DAYS with at least one 'present' session —
+            // counting sessions directly would inflate this once a worker
+            // can have 2-3 sessions in the same day.
+            'days_worked'  => $monthSessions->where('status', 'present')
+                ->pluck('date')
+                ->map(fn($d) => $d->format('Y-m-d'))
+                ->unique()
                 ->count(),
-            'total_hours'  => WorkerAttendance::where('user_id', $userId)
-                ->whereDate('date', '>=', $today->copy()->startOfMonth())
-                ->sum('hours_worked'),
-            'on_time_days' => WorkerAttendance::where('user_id', $userId)
-                ->where('status', 'present')
-                ->whereDate('date', '>=', $today->copy()->startOfMonth())
+
+            // Hours add up correctly across sessions with a plain sum —
+            // no day-deduplication needed here.
+            'total_hours'  => $monthSessions->sum('hours_worked'),
+
+            'on_time_days' => $monthSessions->where('status', 'present')
+                ->pluck('date')
+                ->map(fn($d) => $d->format('Y-m-d'))
+                ->unique()
                 ->count(),
-            'late_days'    => WorkerAttendance::where('user_id', $userId)
-                ->where('status', 'late')
-                ->whereDate('date', '>=', $today->copy()->startOfMonth())
+
+            // Distinct days with at least one late session, not a count of
+            // late sessions — a worker late for 2 of 3 windows in one day
+            // should still only count as 1 late day.
+            'late_days'    => $monthSessions->where('status', 'late')
+                ->pluck('date')
+                ->map(fn($d) => $d->format('Y-m-d'))
+                ->unique()
                 ->count(),
         ];
 
-        return view('worker.attendance', compact('todayAttendance', 'isClockedIn', 'history', 'stats'));
+        return view('worker.attendance', compact('openSession', 'isClockedIn', 'history', 'stats'));
     }
 
     public function clockIn(Request $request)
@@ -135,34 +198,58 @@ class WorkerController extends Controller
             $today  = Carbon::today();
             $now    = Carbon::now();
 
-            $existing = WorkerAttendance::where('user_id', $userId)
-                ->whereDate('date', $today)
+            // A worker can only be in ONE open session at a time, but may
+            // already have earlier closed sessions today (e.g. morning
+            // already clocked in/out) — that's expected and allowed.
+            $openSession = WorkerAttendance::where('user_id', $userId)
+                ->openSession()
                 ->first();
 
-            if ($existing?->clock_in) {
+            if ($openSession) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Already clocked in today',
+                    'message' => 'You are already clocked in. Clock out before starting a new session.',
                 ], 422);
             }
 
-            $expectedStart = Carbon::parse($today->format('Y-m-d') . ' 08:00:00');
-            $status        = $now->lte($expectedStart) ? 'present' : 'late';
+            // Which task window does this clock-in fall into? Null when
+            // outside all three windows (e.g. very early morning or late
+            // night) — that session just isn't tied to a window and is
+            // never marked late.
+            $window = $this->taskService->windowForTime($now);
+            $window = $window === 'none' ? null : $window;
 
-            WorkerAttendance::updateOrCreate(
-                ['user_id' => $userId, 'date' => $today],
-                [
-                    'clock_in' => $now->format('H:i:s'),
-                    'status'   => $status,
-                    'notes'    => $status === 'late' ? 'Arrived late' : null,
-                ]
-            );
+            // Lateness cutoff matches each window's own opening time —
+            // morning/afternoon/evening all use the same 6/12/17 boundaries
+            // as DailyTaskService, so "late" means "after this window had
+            // already opened", not a single fixed cutoff for the whole day.
+            $windowStarts = [
+                'morning'   => '06:00:00',
+                'afternoon' => '12:00:00',
+                'evening'   => '17:00:00',
+            ];
+
+            $status = 'present';
+            if ($window && isset($windowStarts[$window])) {
+                $expectedStart = Carbon::parse($today->format('Y-m-d') . ' ' . $windowStarts[$window]);
+                $status = $now->gt($expectedStart) ? 'late' : 'present';
+            }
+
+            $session = WorkerAttendance::create([
+                'user_id' => $userId,
+                'date'    => $today,
+                'window'  => $window,
+                'clock_in' => $now->format('H:i:s'),
+                'status'   => $status,
+                'notes'    => $status === 'late' ? 'Arrived late' : null,
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Clocked in successfully',
                 'time'    => $now->format('h:i A'),
                 'status'  => $status,
+                'window'  => $window,
             ]);
 
         } catch (\Exception $e) {
@@ -176,32 +263,29 @@ class WorkerController extends Controller
     public function clockOut(Request $request)
     {
         try {
-            $userId     = auth()->id();
-            $today      = Carbon::today();
-            $now        = Carbon::now();
+            $userId = auth()->id();
+            $now    = Carbon::now();
 
-            $attendance = WorkerAttendance::where('user_id', $userId)
-                ->whereDate('date', $today)
+            // Close whichever session is currently open, regardless of which
+            // window it belongs to or what day it started on (a session
+            // should always be closed same-day in practice, but we look up
+            // by open-session rather than by today's date to stay correct
+            // even if a session is somehow left open overnight).
+            $session = WorkerAttendance::where('user_id', $userId)
+                ->openSession()
                 ->first();
 
-            if (!$attendance?->clock_in) {
+            if (!$session) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Not clocked in yet',
                 ], 422);
             }
 
-            if ($attendance->clock_out) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Already clocked out',
-                ], 422);
-            }
-
-            $clockInTime = Carbon::parse($today->format('Y-m-d') . ' ' . $attendance->clock_in);
+            $clockInTime = Carbon::parse($session->date->format('Y-m-d') . ' ' . $session->clock_in);
             $hoursWorked = round($clockInTime->diffInMinutes($now) / 60, 2);
 
-            $attendance->update([
+            $session->update([
                 'clock_out'    => $now->format('H:i:s'),
                 'hours_worked' => $hoursWorked,
             ]);
@@ -228,12 +312,17 @@ class WorkerController extends Controller
             $month  = $request->get('month', Carbon::now()->month);
             $year   = $request->get('year', Carbon::now()->year);
 
+            // One entry per SESSION (not per day) — a day with 3 sessions
+            // now produces 3 entries here, each carrying its own window.
             $attendance = WorkerAttendance::where('user_id', $userId)
                 ->whereYear('date', $year)
                 ->whereMonth('date', $month)
+                ->orderBy('date')
+                ->orderBy('clock_in')
                 ->get()
                 ->map(fn($r) => [
                     'date'         => $r->date->format('Y-m-d'),
+                    'window'       => $r->window,
                     'clock_in'     => $r->clock_in  ? Carbon::parse($r->clock_in)->format('h:i A')  : null,
                     'clock_out'    => $r->clock_out ? Carbon::parse($r->clock_out)->format('h:i A') : null,
                     'hours_worked' => $r->hours_worked,

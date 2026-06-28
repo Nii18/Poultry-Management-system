@@ -54,7 +54,15 @@
                     </div>
                     <div class="stat-card-info">
                         <span class="stat-card-label">Tasks Done</span>
-                        <h3 class="stat-card-value" id="tasksDoneCounter">0/{{ count($todayTasks) }}</h3>
+                        {{--
+                            We count ALL of today's assignments (dashboard + tasks page
+                            share the same WorkerTaskAssignment pool). The counter here
+                            reflects only the dashboard card's list; the tasks page has
+                            its own grouped view. Both write to the same DB rows.
+                        --}}
+                        <h3 class="stat-card-value" id="tasksDoneCounter">
+                            {{ $todayTasks->where('status', 'completed')->count() }}/{{ $todayTasks->count() }}
+                        </h3>
                     </div>
                 </div>
             </div>
@@ -86,45 +94,152 @@
         </div>
     </div>
 
-    <!-- Today's Tasks - Using Database -->
+    <!-- Today's Tasks -->
     <div class="row g-4 mb-4">
         <div class="col-md-6">
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-header bg-white border-0 py-3">
                     <h5 class="card-title mb-0 fw-semibold">
                         <i class="fas fa-tasks me-2 text-primary"></i>Today's Tasks
-                        <small class="text-muted ms-2">Check off tasks as you complete them</small>
+                        <small class="text-muted ms-2">Assigned to you by your manager</small>
                     </h5>
                 </div>
                 <div class="card-body">
-                    @forelse($todayTasks as $task)
-                    <div class="task-item d-flex justify-content-between align-items-center p-3 mb-2 bg-light rounded-3" data-task-id="{{ $task->id }}">
-                        <div class="d-flex align-items-center gap-3">
-                            <input class="form-check-input task-checkbox" type="checkbox" 
-                                   data-task-id="{{ $task->id }}" 
-                                   {{ $task->status === 'completed' ? 'checked' : '' }}>
-                            <div>
-                                <h6 class="mb-1 {{ $task->status === 'completed' ? 'text-decoration-line-through text-muted' : '' }}">
-                                    {{ $task->title }}
+                    @php
+                        $gracePeriodMinutes = 15;
+
+                        // Window ordering, used to determine whether a task's window
+                        // is still locked relative to the current window. Mirrors the
+                        // same WINDOW_ORDER used in DailyTaskService::isWindowLocked()
+                        // and in worker/tasks.blade.php — kept in sync intentionally.
+                        $windowOrderMap = ['morning' => 0, 'afternoon' => 1, 'evening' => 2];
+                        $currentIdx     = $windowOrderMap[$currentWindow] ?? -1; // -1 when 'none'
+                    @endphp
+
+                    @forelse($todayTasks as $assignment)
+                    @php
+                        $task        = $assignment->task;           // WorkerTask via relationship
+                        $isCompleted = $assignment->status === 'completed';
+                        $isMissed    = $assignment->status === 'missed';
+
+                        // Is this task's window still locked (hasn't opened yet today)?
+                        // A task with no recognised window is never locked (fail open),
+                        // matching DailyTaskService::isWindowLocked().
+                        $taskIdx  = $windowOrderMap[$task?->window] ?? null;
+                        $isLocked = !$isCompleted && !$isMissed && $taskIdx !== null && $taskIdx > $currentIdx;
+
+                        // Is the undo window still open? (completed_at within 15 min)
+                        $canUndo = $isCompleted
+                            && $assignment->completed_at
+                            && $assignment->completed_at->gt(now()->subMinutes($gracePeriodMinutes));
+
+                        // ISO string for JS countdown (null-safe)
+                        $undoDeadlineIso = $canUndo
+                            ? $assignment->completed_at->addMinutes($gracePeriodMinutes)->toIso8601String()
+                            : null;
+                    @endphp
+
+                    <div class="task-item d-flex justify-content-between align-items-center p-3 mb-2 bg-light rounded-3
+                                {{ $isCompleted ? 'task-item--completed' : '' }}
+                                {{ $isMissed    ? 'task-item--missed'    : '' }}
+                                {{ $isLocked    ? 'task-item--locked'    : '' }}"
+                         data-assignment-id="{{ $assignment->id }}">
+
+                        <div class="d-flex align-items-center gap-3 flex-grow-1">
+
+                            {{-- Status indicator --}}
+                            @if($isMissed)
+                                <span class="flex-shrink-0" title="Missed">
+                                    <i class="fas fa-times-circle text-danger fs-5"></i>
+                                </span>
+                            @elseif($isCompleted)
+                                {{-- Static checkmark; undo shown separately --}}
+                                <span class="flex-shrink-0" title="Completed">
+                                    <i class="fas fa-check-circle text-success fs-5"></i>
+                                </span>
+                            @elseif($isLocked)
+                                {{-- Locked: window hasn't opened yet --}}
+                                <span class="flex-shrink-0 text-muted" title="Locked until window opens">
+                                    <i class="fas fa-lock fs-5"></i>
+                                </span>
+                            @else
+                                <input class="form-check-input task-checkbox flex-shrink-0"
+                                       type="checkbox"
+                                       data-assignment-id="{{ $assignment->id }}"
+                                       title="Mark as completed">
+                            @endif
+
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1 task-title
+                                    {{ $isCompleted ? 'text-decoration-line-through text-muted' : 'text-dark' }}
+                                    {{ $isMissed    ? 'text-muted fst-italic' : '' }}
+                                    {{ $isLocked    ? 'text-muted' : '' }}">
+                                    {{ $task?->title ?? 'Untitled task' }}
                                 </h6>
-                                <small class="text-muted">{{ $task->description }}</small>
-                                @if($task->start_time && $task->end_time)
-                                    <div class="mt-1">
-                                        <span class="badge bg-secondary-soft text-secondary">
-                                            <i class="fas fa-clock me-1"></i>{{ \Carbon\Carbon::parse($task->start_time)->format('h:i A') }} - {{ \Carbon\Carbon::parse($task->end_time)->format('h:i A') }}
-                                        </span>
-                                    </div>
+
+                                @if($task?->description)
+                                    <small class="text-muted d-block mb-1">{{ $task->description }}</small>
                                 @endif
+
+                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                    @if($task?->start_time && $task?->end_time)
+                                    <span class="badge bg-secondary-soft text-secondary">
+                                        <i class="fas fa-clock me-1"></i>
+                                        {{ \Carbon\Carbon::parse($task->start_time)->format('h:i A') }}
+                                        – {{ \Carbon\Carbon::parse($task->end_time)->format('h:i A') }}
+                                    </span>
+                                    @endif
+
+                                    @if($isCompleted && $assignment->completed_at)
+                                    <span class="badge bg-success-soft text-success">
+                                        <i class="fas fa-check me-1"></i>
+                                        Done at {{ $assignment->completed_at->format('h:i A') }}
+                                    </span>
+                                    @endif
+
+                                    @if($isMissed)
+                                    <span class="badge bg-danger-soft text-danger">
+                                        <i class="fas fa-clock me-1"></i>Window closed
+                                    </span>
+                                    @endif
+
+                                    @if($isLocked)
+                                    <span class="badge bg-secondary-soft text-secondary">
+                                        <i class="fas fa-lock me-1"></i>
+                                        Unlocks {{ $task?->window === 'afternoon' ? 'at 12:00 PM' : 'at 5:00 PM' }}
+                                    </span>
+                                    @endif
+                                </div>
                             </div>
                         </div>
-                        <span class="badge bg-{{ $task->priority === 'high' ? 'danger' : ($task->priority === 'medium' ? 'warning' : 'info') }}-soft">
-                            {{ ucfirst($task->priority) }} Priority
-                        </span>
+
+                        <div class="d-flex flex-column align-items-end gap-1 ms-2 flex-shrink-0">
+                            {{-- Priority badge --}}
+                            @php
+                                $pColors = ['high' => 'danger', 'medium' => 'warning', 'low' => 'info'];
+                                $pc = $pColors[$task?->priority ?? 'low'] ?? 'secondary';
+                            @endphp
+                            <span class="badge bg-{{ $pc }}-soft text-{{ $pc }}">
+                                {{ ucfirst($task?->priority ?? 'low') }}
+                            </span>
+
+                            {{-- Undo button (grace period only) --}}
+                            @if($canUndo)
+                            <button class="btn btn-sm btn-outline-secondary undo-task-btn"
+                                    data-assignment-id="{{ $assignment->id }}"
+                                    data-undo-deadline="{{ $undoDeadlineIso }}"
+                                    title="Undo completion (available for {{ $gracePeriodMinutes }} min)">
+                                <i class="fas fa-undo fa-xs me-1"></i>
+                                <span class="undo-countdown"></span>
+                            </button>
+                            @endif
+                        </div>
+
                     </div>
                     @empty
                     <div class="text-center py-4 text-muted">
                         <i class="fas fa-check-circle fa-2x mb-2"></i>
-                        <p>No tasks assigned for today. Great job!</p>
+                        <p>No tasks assigned for today.</p>
                     </div>
                     @endforelse
                 </div>
@@ -222,7 +337,7 @@
             <div class="row g-3">
                 <div class="col-md-4">
                     <div class="reminder-item p-3 bg-light rounded-3 text-center" onclick="showReminderTip('feed')">
-                        <i class="fas fa-chicken fa-2x text-primary mb-2"></i>
+                        <i class="fas fa-drumstick-bite fa-2x text-primary mb-2"></i>
                         <h6>Check Feed Levels</h6>
                         <small class="text-muted">Ensure feeders are full before leaving</small>
                     </div>
@@ -246,7 +361,7 @@
     </div>
 
     <!-- Low Stock Alerts (Visible to Admin and Manager only) -->
-    @if($lowFeedStock->count() > 0 && $isAdminOrManager)
+    @if(isset($lowFeedStock) && $lowFeedStock->count() > 0 && $isAdminOrManager)
     <div class="card shadow-sm border-0 mt-4">
         <div class="card-header bg-white border-0 py-3">
             <h5 class="card-title mb-0 fw-semibold">
@@ -257,7 +372,7 @@
             <div class="row g-3">
                 @foreach($lowFeedStock as $stock)
                 <div class="col-md-4">
-                    <div class="alert-card p-3 bg-light-warning rounded-3 d-flex justify-content-between align-items-center">
+                    <div class="p-3 bg-light rounded-3 d-flex justify-content-between align-items-center">
                         <div>
                             <h6 class="mb-1">{{ $stock->feedType->name ?? 'Feed' }}</h6>
                             <small>Remaining: {{ number_format($stock->remaining_quantity_kg) }} kg</small>
@@ -305,7 +420,7 @@
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Mortality</label>
-                            <input type="number" name="mortality_count" class="form-control" value="0" min="0>
+                            <input type="number" name="mortality_count" class="form-control" value="0" min="0">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Culling</label>
@@ -376,17 +491,29 @@
         border-color: #10b981;
     }
     .task-item {
-        transition: all 0.3s ease;
+        transition: background 0.25s ease, box-shadow 0.25s ease;
     }
     .task-item:hover {
         background: white !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     }
+    .task-item--completed {
+        background: #f0fdf4 !important;
+        border-left: 3px solid #10b981;
+        border-radius: 0 0.5rem 0.5rem 0 !important;
+    }
+    .task-item--missed {
+        background: #fff5f5 !important;
+        opacity: 0.8;
+    }
+    .task-item--locked {
+        opacity: 0.65;
+        pointer-events: none;
+    }
     .task-checkbox {
         cursor: pointer;
         width: 20px;
         height: 20px;
-        margin-right: 10px;
     }
     .activity-item {
         transition: all 0.3s ease;
@@ -425,9 +552,7 @@
         justify-content: center;
         font-size: 1.25rem;
     }
-    .stat-card-info {
-        flex: 1;
-    }
+    .stat-card-info { flex: 1; }
     .stat-card-label {
         font-size: 0.7rem;
         text-transform: uppercase;
@@ -441,58 +566,33 @@
         margin: 0;
         color: #1e293b;
     }
-    .bg-primary-soft { background: #e0f2fe; }
-    .bg-success-soft { background: #dcfce7; }
-    .bg-danger-soft { background: #fee2e2; }
-    .bg-info-soft { background: #d1fae5; }
-    .bg-warning-soft { background: #fef3c7; }
+    .bg-primary-soft   { background: #e0f2fe; }
+    .bg-success-soft   { background: #dcfce7; }
+    .bg-danger-soft    { background: #fee2e2; }
+    .bg-info-soft      { background: #d1fae5; }
+    .bg-warning-soft   { background: #fef3c7; }
+    .bg-secondary-soft { background: #f1f5f9; }
 
-    .completed-task {
-        opacity: 0.6;
-        background: #f1f5f9 !important;
+    .undo-task-btn {
+        font-size: 0.7rem;
+        padding: 2px 8px;
+        border-radius: 20px;
+        white-space: nowrap;
+    }
+    .undo-countdown {
+        font-variant-numeric: tabular-nums;
+        font-size: 0.7rem;
     }
 
-    #createLogModal .modal-content {
-        border: none;
-        border-radius: 16px;
-        overflow: hidden;
-    }
-    #createLogModal .modal-header {
-        background: linear-gradient(135deg, #2f9088, #276f69);
-        color: #fff;
-        border-bottom: none;
-        padding: 1.2rem 1.5rem;
-    }
-    #createLogModal .modal-body {
-        background: #f5f7fb;
-        padding: 1.5rem;
-    }
-    #createLogModal label {
-        color: #495057 !important;
-        font-weight: 600;
-        margin-bottom: 6px;
-    }
+    #createLogModal .modal-content  { border: none; border-radius: 16px; overflow: hidden; }
+    #createLogModal .modal-header   { background: linear-gradient(135deg, #2f9088, #276f69); color: #fff; border-bottom: none; padding: 1.2rem 1.5rem; }
+    #createLogModal .modal-body     { background: #f5f7fb; padding: 1.5rem; }
+    #createLogModal label           { color: #495057 !important; font-weight: 600; margin-bottom: 6px; }
     #createLogModal .form-control,
-    #createLogModal .form-select {
-        border-radius: 10px;
-        border: 1px solid #dce1e7;
-        min-height: 46px;
-        background: #fff !important;
-        color: #212529 !important;
-    }
-    #createLogModal textarea {
-        min-height: 120px;
-        resize: vertical;
-    }
-    #createLogModal .modal-footer {
-        background: #fff;
-        border-top: 1px solid #edf2f7;
-        padding: 1rem 1.5rem;
-    }
-    #createLogModal .btn-close {
-        filter: brightness(0) invert(1);
-        opacity: 1;
-    }
+    #createLogModal .form-select    { border-radius: 10px; border: 1px solid #dce1e7; min-height: 46px; background: #fff !important; color: #212529 !important; }
+    #createLogModal textarea        { min-height: 120px; resize: vertical; }
+    #createLogModal .modal-footer   { background: #fff; border-top: 1px solid #edf2f7; padding: 1rem 1.5rem; }
+    #createLogModal .btn-close      { filter: brightness(0) invert(1); opacity: 1; }
 </style>
 @endpush
 
@@ -500,207 +600,315 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // Update task status via AJAX (Database)
-    function updateTaskCounter() {
-        const totalTasks = {{ count($todayTasks) }};
-        const completedTasks = document.querySelectorAll('.task-checkbox:checked').length;
-        const counterEl = document.getElementById('tasksDoneCounter');
-        
-        if (counterEl) {
-            counterEl.textContent = `${completedTasks}/${totalTasks}`;
-            
-            if (completedTasks === totalTasks && totalTasks > 0) {
-                counterEl.style.color = '#10b981';
-            } else if (completedTasks > 0) {
-                counterEl.style.color = '#f59e0b';
-            } else {
-                counterEl.style.color = '#1e293b';
+(function () {
+    'use strict';
+
+    const CSRF              = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+    const GRACE_MINUTES     = {{ $gracePeriodMinutes ?? 15 }};
+    const counterEl         = document.getElementById('tasksDoneCounter');
+    const undoTimers        = {}; // assignmentId → interval ID
+
+    // ── Counter ───────────────────────────────────────────────────────────────
+    function updateCounter() {
+        if (!counterEl) return;
+        const total     = document.querySelectorAll('.task-item[data-assignment-id]').length;
+        const completed = document.querySelectorAll('.task-item--completed').length;
+
+        counterEl.textContent = `${completed}/${total}`;
+        counterEl.style.color = completed === total && total > 0
+            ? '#10b981'
+            : completed > 0 ? '#f59e0b' : '#1e293b';
+    }
+
+    // ── Mark item as completed in the DOM ────────────────────────────────────
+    function applyCompleted(taskItem, assignmentId, completedAt) {
+        taskItem.classList.add('task-item--completed');
+        taskItem.classList.remove('task-item--missed');
+
+        // Replace checkbox with a static checkmark
+        const checkboxWrapper = taskItem.querySelector('.task-checkbox');
+        if (checkboxWrapper) {
+            const icon = document.createElement('span');
+            icon.className = 'flex-shrink-0';
+            icon.title     = 'Completed';
+            icon.innerHTML = '<i class="fas fa-check-circle text-success fs-5"></i>';
+            checkboxWrapper.replaceWith(icon);
+        }
+
+        // Strikethrough title
+        const titleEl = taskItem.querySelector('.task-title');
+        if (titleEl) titleEl.classList.add('text-decoration-line-through', 'text-muted');
+
+        // Show undo button (grace period)
+        const priorityBadge = taskItem.querySelector('.badge');
+        const actionCol     = taskItem.querySelector('.d-flex.flex-column');
+        if (actionCol) {
+            const existingUndo = actionCol.querySelector('.undo-task-btn');
+            if (!existingUndo) {
+                const deadline = new Date(completedAt);
+                deadline.setMinutes(deadline.getMinutes() + GRACE_MINUTES);
+
+                const undoBtn     = document.createElement('button');
+                undoBtn.className = 'btn btn-sm btn-outline-secondary undo-task-btn';
+                undoBtn.dataset.assignmentId  = assignmentId;
+                undoBtn.dataset.undoDeadline  = deadline.toISOString();
+                undoBtn.title     = `Undo (available ${GRACE_MINUTES} min after completion)`;
+                undoBtn.innerHTML = '<i class="fas fa-undo fa-xs me-1"></i><span class="undo-countdown"></span>';
+                actionCol.appendChild(undoBtn);
+
+                bindUndoButton(undoBtn);
+                startCountdown(undoBtn, deadline, assignmentId);
             }
         }
+
+        updateCounter();
     }
-    
-    // Initialize counter on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        updateTaskCounter();
-    });
-    
-    // Handle task checkbox changes
-    document.querySelectorAll('.task-checkbox').forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            const taskId = this.dataset.taskId;
-            const isChecked = this.checked;
-            const status = isChecked ? 'completed' : 'pending';
-            const taskDiv = this.closest('.task-item');
-            
-            // Update UI immediately
-            if (isChecked) {
-                taskDiv.classList.add('completed-task');
-                const label = taskDiv.querySelector('h6');
-                if (label) label.classList.add('text-decoration-line-through', 'text-muted');
-            } else {
-                taskDiv.classList.remove('completed-task');
-                const label = taskDiv.querySelector('h6');
-                if (label) label.classList.remove('text-decoration-line-through', 'text-muted');
+
+    // ── Revert item to pending in the DOM ────────────────────────────────────
+    function applyPending(taskItem, assignmentId) {
+        taskItem.classList.remove('task-item--completed');
+
+        // Replace static icon with a checkbox
+        const iconSpan = taskItem.querySelector('span[title="Completed"]');
+        if (iconSpan) {
+            const cb       = document.createElement('input');
+            cb.type        = 'checkbox';
+            cb.className   = 'form-check-input task-checkbox flex-shrink-0';
+            cb.dataset.assignmentId = assignmentId;
+            cb.title       = 'Mark as completed';
+            iconSpan.replaceWith(cb);
+            bindCheckbox(cb);
+        }
+
+        // Remove strikethrough
+        const titleEl = taskItem.querySelector('.task-title');
+        if (titleEl) titleEl.classList.remove('text-decoration-line-through', 'text-muted');
+
+        // Remove undo button & clear its countdown timer
+        const undoBtn = taskItem.querySelector('.undo-task-btn');
+        if (undoBtn) undoBtn.remove();
+        if (undoTimers[assignmentId]) {
+            clearInterval(undoTimers[assignmentId]);
+            delete undoTimers[assignmentId];
+        }
+
+        // Remove "done at" badge
+        taskItem.querySelectorAll('.badge.bg-success-soft').forEach(b => b.remove());
+
+        updateCounter();
+    }
+
+    // ── Countdown timer for undo button ──────────────────────────────────────
+    function startCountdown(btn, deadline, assignmentId) {
+        const countdownEl = btn.querySelector('.undo-countdown');
+
+        function tick() {
+            const remaining = Math.floor((deadline - Date.now()) / 1000);
+            if (remaining <= 0) {
+                // Grace period expired — remove the button
+                clearInterval(undoTimers[assignmentId]);
+                delete undoTimers[assignmentId];
+                btn.remove();
+                return;
             }
-            
-            // Update counter
-            updateTaskCounter();
-            
-            // Send AJAX request to update database
-            fetch(`/worker/tasks/${taskId}/status`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ status: status })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && isChecked) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Task Completed!',
-                        text: 'Great job! Keep up the good work.',
-                        timer: 1500,
-                        showConfirmButton: false,
-                        toast: true,
-                        position: 'top-end'
-                    });
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                // Revert UI on error
-                if (isChecked) {
-                    this.checked = false;
-                    taskDiv.classList.remove('completed-task');
-                    const label = taskDiv.querySelector('h6');
-                    if (label) label.classList.remove('text-decoration-line-through', 'text-muted');
-                } else {
-                    this.checked = true;
-                    taskDiv.classList.add('completed-task');
-                    const label = taskDiv.querySelector('h6');
-                    if (label) label.classList.add('text-decoration-line-through', 'text-muted');
-                }
-                updateTaskCounter();
+            const m = Math.floor(remaining / 60);
+            const s = remaining % 60;
+            countdownEl.textContent = `${m}:${String(s).padStart(2, '0')}`;
+        }
+
+        tick();
+        undoTimers[assignmentId] = setInterval(tick, 1000);
+    }
+
+    // ── Bind undo button click ────────────────────────────────────────────────
+    function bindUndoButton(btn) {
+        btn.addEventListener('click', function () {
+            const assignmentId = this.dataset.assignmentId;
+            const deadline     = new Date(this.dataset.undoDeadline);
+
+            if (Date.now() > deadline.getTime()) {
                 Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'Failed to update task status'
+                    icon: 'warning',
+                    title: 'Too late!',
+                    text: 'The undo window has expired.',
+                    toast: true, position: 'top-end',
+                    timer: 2500, showConfirmButton: false,
                 });
+                this.remove();
+                return;
+            }
+
+            Swal.fire({
+                icon              : 'question',
+                title             : 'Undo completion?',
+                text              : 'This will mark the task as pending again.',
+                showCancelButton  : true,
+                confirmButtonText : 'Yes, undo it',
+                cancelButtonText  : 'Keep completed',
+                confirmButtonColor: '#6b7280',
+            }).then(result => {
+                if (!result.isConfirmed) return;
+                sendStatusUpdate(assignmentId, 'pending');
             });
         });
-    });
-    
-    // View log button
-    document.querySelectorAll('.view-log-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const logId = this.dataset.id;
-            window.location.href = `/daily-logs/${logId}`;
-        });
-    });
-    
-    // Reminder tips
-    function showReminderTip(type) {
-        let title = '', message = '';
-        switch(type) {
-            case 'feed':
-                title = '🐓 Feed Check Reminder';
-                message = '• Check all feeders are full<br>• Ensure feed is fresh (no mold)<br>• Record feed intake in Quick Log<br>• Report any feed quality issues';
-                break;
-            case 'water':
-                title = '💧 Water Quality Check';
-                message = '• Check waterers are clean<br>• Ensure water is flowing properly<br>• Refill empty waterers<br>• Check for leaks';
-                break;
-            case 'health':
-                title = '🩺 Health Observation';
-                message = '• Watch for sick or injured birds<br>• Check for unusual behavior<br>• Monitor feed/water intake<br>• Report concerns immediately to supervisor';
-                break;
-            default:
-                title = 'Daily Reminder';
-                message = 'Stay focused and follow safety guidelines';
-        }
-        Swal.fire({
-            title: title,
-            html: message,
-            icon: 'info',
-            confirmButtonColor: '#10b981',
-            confirmButtonText: 'Got it!'
+    }
+
+    // ── Bind checkbox (check → complete) ─────────────────────────────────────
+    function bindCheckbox(checkbox) {
+        checkbox.addEventListener('change', function () {
+            if (!this.checked) return; // checkboxes only go one direction: → completed
+            const assignmentId = this.dataset.assignmentId;
+            sendStatusUpdate(assignmentId, 'completed');
         });
     }
-    
-    // Chart for Admin/Manager
-    @if($isAdminOrManager)
-    const feedTrendData = @json($feedTrend ?? []);
-    const mortalityTrendData = @json($mortalityTrend ?? []);
-    
-    if (feedTrendData.length > 0) {
-        const ctx = document.getElementById('workerTrendChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: feedTrendData.map(item => item.date),
-                datasets: [
-                    {
-                        label: 'Feed Consumption (kg)',
-                        data: feedTrendData.map(item => item.total_feed),
-                        borderColor: '#10b981',
-                        backgroundColor: 'rgba(16,185,129,0.1)',
-                        tension: 0.3,
-                        fill: true,
-                        yAxisID: 'y'
-                    },
-                    {
-                        label: 'Mortality',
-                        data: mortalityTrendData.map(item => item.total_mortality),
-                        borderColor: '#dc2626',
-                        backgroundColor: 'rgba(220,38,38,0.1)',
-                        tension: 0.3,
-                        fill: true,
-                        yAxisID: 'y1'
-                    }
-                ]
+
+    // ── AJAX status update ────────────────────────────────────────────────────
+    function sendStatusUpdate(assignmentId, newStatus) {
+        const taskItem = document.querySelector(`.task-item[data-assignment-id="${assignmentId}"]`);
+
+        fetch(`/worker/tasks/${assignmentId}/status`, {
+            method : 'PUT',
+            headers: {
+                'Content-Type' : 'application/json',
+                'X-CSRF-TOKEN' : CSRF,
+                'Accept'       : 'application/json',
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return context.dataset.label + ': ' + context.raw;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: { title: { display: true, text: 'Feed (kg)' } },
-                    y1: { position: 'right', title: { display: true, text: 'Mortality' }, grid: { drawOnChartArea: false } }
-                }
+            body: JSON.stringify({ status: newStatus }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message ?? 'Unknown error');
+
+            if (newStatus === 'completed') {
+                applyCompleted(taskItem, assignmentId, data.assignment.completed_at);
+
+                Swal.fire({
+                    icon             : 'success',
+                    title            : 'Task completed! 🎉',
+                    text             : 'Great work. Keep it up!',
+                    timer            : 2000,
+                    showConfirmButton : false,
+                    toast            : true,
+                    position         : 'top-end',
+                });
+            } else {
+                applyPending(taskItem, assignmentId);
+
+                Swal.fire({
+                    icon             : 'info',
+                    title            : 'Task reopened',
+                    text             : 'Task marked as pending.',
+                    timer            : 1800,
+                    showConfirmButton : false,
+                    toast            : true,
+                    position         : 'top-end',
+                });
             }
+        })
+        .catch(err => {
+            console.error('Task update failed:', err);
+
+            // Revert any optimistic UI
+            const checkbox = taskItem?.querySelector('.task-checkbox');
+            if (checkbox) checkbox.checked = false;
+
+            Swal.fire({
+                icon : 'error',
+                title: 'Update failed',
+                text : err.message || 'Could not save task status. Please try again.',
+            });
         });
+    }
+
+    // ── Initial binding ───────────────────────────────────────────────────────
+    document.querySelectorAll('.task-checkbox').forEach(bindCheckbox);
+    document.querySelectorAll('.undo-task-btn').forEach(btn => {
+        bindUndoButton(btn);
+        const deadline = new Date(btn.dataset.undoDeadline);
+        startCountdown(btn, deadline, btn.dataset.assignmentId);
+    });
+
+    updateCounter();
+
+    // ── View log buttons ──────────────────────────────────────────────────────
+    document.querySelectorAll('.view-log-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            window.location.href = `/daily-logs/${this.dataset.id}`;
+        });
+    });
+
+    // ── Reminder tips ─────────────────────────────────────────────────────────
+    window.showReminderTip = function (type) {
+        const tips = {
+            feed  : { title: '🐓 Feed Check Reminder',   html: '• Check all feeders are full<br>• Ensure feed is fresh (no mold)<br>• Record feed intake in Quick Log<br>• Report any feed quality issues' },
+            water : { title: '💧 Water Quality Check',    html: '• Check waterers are clean<br>• Ensure water is flowing properly<br>• Refill empty waterers<br>• Check for leaks' },
+            health: { title: '🩺 Health Observation',     html: '• Watch for sick or injured birds<br>• Check for unusual behaviour<br>• Monitor feed/water intake<br>• Report concerns to your supervisor immediately' },
+        };
+        const tip = tips[type] ?? { title: 'Daily Reminder', html: 'Stay focused and follow safety guidelines.' };
+        Swal.fire({ ...tip, icon: 'info', confirmButtonColor: '#10b981', confirmButtonText: 'Got it!' });
+    };
+
+    // ── Trend chart (admin/manager only) ─────────────────────────────────────
+    @if($isAdminOrManager)
+    const feedTrendData     = @json($feedTrend ?? []);
+    const mortalityTrendData = @json($mortalityTrend ?? []);
+
+    if (feedTrendData.length > 0) {
+        const ctx = document.getElementById('workerTrendChart')?.getContext('2d');
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels  : feedTrendData.map(i => i.date),
+                    datasets: [
+                        {
+                            label          : 'Feed Consumption (kg)',
+                            data           : feedTrendData.map(i => i.total_feed),
+                            borderColor    : '#10b981',
+                            backgroundColor: 'rgba(16,185,129,0.1)',
+                            tension        : 0.3,
+                            fill           : true,
+                            yAxisID        : 'y',
+                        },
+                        {
+                            label          : 'Mortality',
+                            data           : mortalityTrendData.map(i => i.total_mortality),
+                            borderColor    : '#dc2626',
+                            backgroundColor: 'rgba(220,38,38,0.1)',
+                            tension        : 0.3,
+                            fill           : true,
+                            yAxisID        : 'y1',
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y  : { title: { display: true, text: 'Feed (kg)' } },
+                        y1 : { position: 'right', title: { display: true, text: 'Mortality' }, grid: { drawOnChartArea: false } },
+                    },
+                },
+            });
+        }
     }
     @endif
-    
-    // Modal functions
-    function openCreateDailyLogModal() {
-        const modal = new bootstrap.Modal(document.getElementById('createLogModal'));
-        modal.show();
-    }
-    
-    function redirectAndOpenModal(routeName, modalId) {
+
+    // ── Modal helpers ─────────────────────────────────────────────────────────
+    window.openCreateDailyLogModal = function () {
+        new bootstrap.Modal(document.getElementById('createLogModal')).show();
+    };
+
+    window.redirectAndOpenModal = function (routeName, modalId) {
         sessionStorage.setItem('openModalOnLoad', modalId);
-        window.location.href = route(routeName);
-    }
-    
-    function route(name) {
-        const routes = {
-            'feed-issuances.index': '{{ route("feed-issuances.index") }}'
-        };
-        return routes[name] || '/';
-    }
+        window.location.href = routeMap[routeName] ?? '/';
+    };
+
+    const routeMap = {
+        'feed-issuances.index': '{{ route("feed-issuances.index") }}',
+    };
+
+})();
 </script>
 @endpush
 

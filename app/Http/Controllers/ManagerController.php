@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Models\WorkerTask;
+use App\Models\WorkerTaskAssignment;
 use App\Models\WorkerAttendance;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -13,18 +15,20 @@ use Carbon\Carbon;
 
 class ManagerController extends Controller
 {
+    public function __construct(protected NotificationService $notifications) {}
     /**
      * Display task management page
      */
     public function manageTasks()
     {
         $workers = User::where('role', 'worker')->where('is_active', true)->get();
-
+    
         $tasks = WorkerTask::with('assignedTo', 'assignedBy')
             ->whereDate('due_date', '>=', Carbon::now()->subDays(7))
-            ->orderBy('due_date', 'desc')
-            ->paginate(20);
-
+            ->orderBy('created_at', 'desc')  
+            ->orderBy('due_date', 'desc')    
+            ->paginate(10);
+    
         return view('manager.tasks', compact('workers', 'tasks'));
     }
 
@@ -39,69 +43,127 @@ class ManagerController extends Controller
     }
 
     /**
-     * Create a new task
+     * Create a new task.
+     *
+     * IMPORTANT: Creating a WorkerTask row alone does NOT make it appear on a
+     * worker's dashboard or tasks page — both of those read from
+     * WorkerTaskAssignment, not WorkerTask. This method must always create
+     * the corresponding assignment row(s) at the same time, or the task is
+     * invisible to the worker (this was the bug: one-off tasks never got an
+     * assignment row at all, and recurring tasks only ever got an assignment
+     * for "today", regardless of due_date).
+     *
+     * - One-off task: exactly one WorkerTaskAssignment, dated due_date.
+     * - Recurring task (N weeks): "recurring" means every day for N weeks.
+     *   One WorkerTask template row is created, plus N*7 WorkerTaskAssignment
+     *   rows, one per day from due_date through due_date + (N weeks - 1 day).
      */
     public function createTask(Request $request)
-{
-    $validator = Validator::make($request->all(), [
-        'title'              => 'required|string|max:255',
-        'description'        => 'nullable|string',
-        'priority'           => 'required|in:high,medium,low',
-        'due_date'           => 'required|date',
-        'start_time'         => 'nullable|date_format:H:i',
-        'end_time'           => 'nullable|date_format:H:i|after:start_time',
-        'assigned_to'        => 'required|exists:users,id',
-        'is_recurring'       => 'boolean',
-        'recurring_pattern' => 'nullable|required_if:is_recurring,1|in:daily,weekly,monthly',
-        'recurring_weeks'    => 'nullable|integer|min:1|max:12',
-    ]);
-
-    if ($validator->fails()) {
-        if ($request->expectsJson()) {
-            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
-        }
-        return back()->withErrors($validator)->withInput();
-    }
-
-    try {
-        DB::beginTransaction();
-
-        $task = WorkerTask::create([
-            'title'             => $request->title,
-            'description'       => $request->description,
-            'priority'          => $request->priority,
-            'due_date'          => $request->due_date,
-            'start_time'        => $request->start_time,
-            'end_time'          => $request->end_time,
-            'assigned_to'       => $request->assigned_to,
-            'assigned_by'       => auth()->id(),
-            'is_recurring'      => $request->boolean('is_recurring'),
-            'recurring_pattern' => $request->recurring_pattern,
-            'status'            => 'pending',
+    {
+        $validator = Validator::make($request->all(), [
+            'title'              => 'required|string|max:255',
+            'description'        => 'nullable|string',
+            'priority'           => 'required|in:high,medium,low',
+            'due_date'           => 'required|date',
+            'start_time'         => 'nullable|date_format:H:i',
+            'end_time'           => 'nullable|date_format:H:i|after:start_time',
+            'assigned_to'        => 'required|exists:users,id',
+            'is_recurring'       => 'boolean',
+            'recurring_pattern' => 'nullable|required_if:is_recurring,1|in:daily,weekly,monthly',
+            'recurring_weeks'    => 'nullable|integer|min:1|max:12',
         ]);
 
-        if ($request->boolean('is_recurring') && $request->recurring_weeks) {
-            $this->createRecurringTasks($task, $request->recurring_weeks);
+        // A task due today can't have a start_time that's already passed —
+        // the worker has no way to perform it before its own start time, and
+        // a task due today starting in the past isn't realistic to assign.
+        // Tasks due on a future date are unaffected: "9 AM" is fine for
+        // tomorrow even though it's earlier than the current time today.
+        $validator->after(function ($validator) use ($request) {
+            if (!$request->due_date || !$request->start_time) {
+                return;
+            }
+
+            $isToday = Carbon::parse($request->due_date)->isToday();
+
+            if ($isToday) {
+                $startDateTime = Carbon::parse($request->due_date . ' ' . $request->start_time);
+
+                if ($startDateTime->isPast()) {
+                    $validator->errors()->add(
+                        'start_time',
+                        'Start time cannot be in the past for a task due today.'
+                    );
+                }
+            }
+        });
+
+        if ($validator->fails()) {
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return back()->withErrors($validator)->withInput();
         }
 
-        DB::commit();
+        try {
+            DB::beginTransaction();
 
-        if ($request->expectsJson()) {
-            return response()->json(['success' => true, 'message' => 'Task created successfully']);
+            $isRecurring = $request->boolean('is_recurring');
+
+            $task = WorkerTask::create([
+                'title'             => $request->title,
+                'description'       => $request->description,
+                'priority'          => $request->priority,
+                'due_date'          => $request->due_date,
+                'start_time'        => $request->start_time,
+                'end_time'          => $request->end_time,
+                'window'            => $this->deriveWindow($request->start_time),
+                'assigned_to'       => $request->assigned_to,
+                'assigned_by'       => auth()->id(),
+                'is_recurring'      => $isRecurring,
+                'recurring_pattern' => $request->recurring_pattern,
+                'status'            => 'pending',
+            ]);
+
+            if ($isRecurring && $request->recurring_weeks) {
+                // "Recurring for N weeks" = one assignment every day for N weeks,
+                // all pointing at this single template task.
+                $this->generateDailyAssignments($task, $request->recurring_weeks);
+            } else {
+                // One-off task: a single assignment on its due_date.
+                WorkerTaskAssignment::create([
+                    'task_id'         => $task->id,
+                    'assigned_to'     => $task->assigned_to,
+                    'assignment_date' => $task->due_date,
+                    'is_completed'    => false,
+                    'status'          => 'pending',
+                ]);
+            }
+
+            DB::commit();
+
+            $this->notifications->notifyWorkerNewTaskAssigned(
+                (int) $request->assigned_to,
+                $task->title,
+                $task->due_date,
+                $task->window
+            );
+
+            if ($request->expectsJson()) {
+                return response()->json(['success' => true, 'message' => 'Task created successfully']);
+            }
+
+            return redirect()->route('manager.tasks')->with('success', 'Task created successfully');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'message' => 'Failed to create task: ' . $e->getMessage()], 500);
+            }
+
+            return back()->with('error', 'Failed to create task: ' . $e->getMessage());
         }
-
-        return redirect()->route('manager.tasks')->with('success', 'Task created successfully');
-
-    } catch (\Exception $e) {
-        DB::rollBack();
-
-        if ($request->expectsJson()) {
-            return response()->json(['success' => false, 'message' => 'Failed to create task: ' . $e->getMessage()], 500);
-        }
-
-        return back()->with('error', 'Failed to create task: ' . $e->getMessage());
     }
-}
 
     /**
      * Show edit task form — this was missing, despite being routed to.
@@ -115,71 +177,101 @@ class ManagerController extends Controller
     }
 
     /**
-     * Update a task
+     * Update a task.
+     *
+     * If due_date, start_time, or assigned_to change, any assignment rows
+     * still in 'pending' or 'in_progress' are stale (wrong date/worker/
+     * window) and are regenerated. Assignments already 'completed' or
+     * 'missed' are left untouched — they represent history that already
+     * happened and shouldn't be rewritten by a later edit to the template.
      */
     public function editTask(Request $request, $id)
-{
-    $task = WorkerTask::findOrFail($id);
+    {
+        $task = WorkerTask::findOrFail($id);
 
-    $validator = Validator::make($request->all(), [
-        'title'       => 'required|string|max:255',
-        'description' => 'nullable|string',
-        'priority'    => 'required|in:high,medium,low',
-        'due_date'    => 'required|date',
-        'start_time'  => 'nullable|date_format:H:i',
-        'end_time'    => 'nullable|date_format:H:i|after:start_time',
-        'assigned_to' => 'required|exists:users,id',
-    ]);
+        $validator = Validator::make($request->all(), [
+            'title'       => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'priority'    => 'required|in:high,medium,low',
+            'due_date'    => 'required|date',
+            'start_time'  => 'nullable|date_format:H:i',
+            'end_time'    => 'nullable|date_format:H:i|after:start_time',
+            'assigned_to' => 'required|exists:users,id',
+        ]);
 
-    if ($validator->fails()) {
-        if ($request->expectsJson()) {
-            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        if ($validator->fails()) {
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return back()->withErrors($validator)->withInput();
         }
-        return back()->withErrors($validator)->withInput();
+
+        try {
+            DB::beginTransaction();
+
+            $relevantFieldsChanged = $task->due_date != $request->due_date
+                || $task->start_time != $request->start_time
+                || $task->assigned_to != $request->assigned_to;
+
+            $task->update([
+                'title'       => $request->title,
+                'description' => $request->description,
+                'priority'    => $request->priority,
+                'due_date'    => $request->due_date,
+                'start_time'  => $request->start_time,
+                'end_time'    => $request->end_time,
+                'assigned_to' => $request->assigned_to,
+                'window'      => $this->deriveWindow($request->start_time),
+            ]);
+
+            if ($relevantFieldsChanged) {
+                $this->regenerateStaleAssignments($task);
+            }
+
+            DB::commit();
+
+            if ($request->expectsJson()) {
+                return response()->json(['success' => true, 'message' => 'Task updated successfully']);
+            }
+
+            return redirect()->route('manager.tasks')->with('success', 'Task updated successfully');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'message' => 'Failed to update task: ' . $e->getMessage()], 500);
+            }
+            return back()->with('error', 'Failed to update task: ' . $e->getMessage());
+        }
     }
-
-    try {
-        $task->update($request->only([
-            'title', 'description', 'priority', 'due_date',
-            'start_time', 'end_time', 'assigned_to',
-        ]));
-
-        if ($request->expectsJson()) {
-            return response()->json(['success' => true, 'message' => 'Task updated successfully']);
-        }
-
-        return redirect()->route('manager.tasks')->with('success', 'Task updated successfully');
-
-    } catch (\Exception $e) {
-        if ($request->expectsJson()) {
-            return response()->json(['success' => false, 'message' => 'Failed to update task: ' . $e->getMessage()], 500);
-        }
-        return back()->with('error', 'Failed to update task: ' . $e->getMessage());
-    }
-}
 
     /**
-     * Delete a task
+     * Delete a task.
+     *
+     * worker_task_assignments.task_id has ON DELETE CASCADE, so deleting the
+     * WorkerTask row also deletes all of its assignment rows automatically —
+     * no extra cleanup needed here.
      */
     public function deleteTask($id)
-{
-    try {
-        $task = WorkerTask::findOrFail($id);
-        $task->delete();
+    {
+        try {
+            $task = WorkerTask::findOrFail($id);
+            $task->delete();
 
-        if (request()->expectsJson()) {
-            return response()->json(['success' => true, 'message' => 'Task deleted successfully']);
+            if (request()->expectsJson()) {
+                return response()->json(['success' => true, 'message' => 'Task deleted successfully']);
+            }
+
+            return redirect()->route('manager.tasks')->with('success', 'Task deleted successfully');
+
+        } catch (\Exception $e) {
+            if (request()->expectsJson()) {
+                return response()->json(['success' => false, 'message' => 'Failed to delete task: ' . $e->getMessage()], 500);
+            }
+            return back()->with('error', 'Failed to delete task: ' . $e->getMessage());
         }
-
-        return redirect()->route('manager.tasks')->with('success', 'Task deleted successfully');
-
-    } catch (\Exception $e) {
-        if (request()->expectsJson()) {
-            return response()->json(['success' => false, 'message' => 'Failed to delete task: ' . $e->getMessage()], 500);
-        }
-        return back()->with('error', 'Failed to delete task: ' . $e->getMessage());
     }
-}
 
     /**
      * View worker attendance report
@@ -264,24 +356,93 @@ class ManagerController extends Controller
     }
 
     /**
-     * Create recurring tasks
+     * Derive a window (morning/afternoon/evening) from a start_time string
+     * (H:i format, e.g. "14:30"). Returns null if no start_time was given —
+     * matches the fail-open behaviour used everywhere else a null window is
+     * encountered (DailyTaskService::isWindowLocked, etc.).
      */
-    private function createRecurringTasks($originalTask, $weeks)
+    private function deriveWindow(?string $startTime): ?string
     {
-        for ($i = 1; $i <= $weeks; $i++) {
-            $newDueDate = Carbon::parse($originalTask->due_date)->addWeeks($i);
+        if (!$startTime) {
+            return null;
+        }
 
-            WorkerTask::create([
-                'title' => $originalTask->title,
-                'description' => $originalTask->description,
-                'priority' => $originalTask->priority,
-                'due_date' => $newDueDate,
-                'start_time' => $originalTask->start_time,
-                'end_time' => $originalTask->end_time,
-                'assigned_to' => $originalTask->assigned_to,
-                'assigned_by' => $originalTask->assigned_by,
-                'is_recurring' => false,
-                'status' => 'pending'
+        $hour = Carbon::parse($startTime)->hour;
+
+        if ($hour >= 6  && $hour < 12) return 'morning';
+        if ($hour >= 12 && $hour < 17) return 'afternoon';
+        if ($hour >= 17 && $hour < 22) return 'evening';
+
+        // Outside 06:00–22:00 doesn't map to any of the three windows.
+        // Leave null rather than guessing — this matches how DailyTaskService
+        // treats an unrecognised/missing window (never locked, never grouped).
+        return null;
+    }
+
+    /**
+     * Create one WorkerTaskAssignment per day for $weeks weeks, starting on
+     * the task's due_date, all pointing at the same $task (template) row.
+     * This is what "recurring" now means: every day, for N weeks.
+     */
+    private function generateDailyAssignments(WorkerTask $task, int $weeks): void
+    {
+        $start = Carbon::parse($task->due_date);
+        $totalDays = $weeks * 7;
+
+        for ($i = 0; $i < $totalDays; $i++) {
+            $date = $start->copy()->addDays($i);
+
+            WorkerTaskAssignment::firstOrCreate(
+                [
+                    'task_id'         => $task->id,
+                    'assigned_to'     => $task->assigned_to,
+                    'assignment_date' => $date->format('Y-m-d'),
+                ],
+                [
+                    'is_completed' => false,
+                    'status'       => 'pending',
+                ]
+            );
+        }
+    }
+
+    /**
+     * Regenerate this task's assignment rows after an edit changed due_date,
+     * start_time, or assigned_to. Only touches assignments still 'pending' or
+     * 'in_progress' — completed/missed rows are left alone since they're
+     * history, not a live schedule.
+     */
+    private function regenerateStaleAssignments(WorkerTask $task): void
+    {
+        WorkerTaskAssignment::where('task_id', $task->id)
+            ->whereIn('status', ['pending', 'in_progress'])
+            ->delete();
+
+        if ($task->is_recurring) {
+            // We don't know how many weeks were originally requested (that
+            // value isn't stored on the template), so we can't perfectly
+            // regenerate a multi-week recurring schedule here. Re-create a
+            // single assignment on the new due_date; any further future days
+            // for a recurring template are picked up incrementally by
+            // DailyTaskService::generateForWorker() on each day's first load.
+            WorkerTaskAssignment::firstOrCreate(
+                [
+                    'task_id'         => $task->id,
+                    'assigned_to'     => $task->assigned_to,
+                    'assignment_date' => $task->due_date,
+                ],
+                [
+                    'is_completed' => false,
+                    'status'       => 'pending',
+                ]
+            );
+        } else {
+            WorkerTaskAssignment::create([
+                'task_id'         => $task->id,
+                'assigned_to'     => $task->assigned_to,
+                'assignment_date' => $task->due_date,
+                'is_completed'    => false,
+                'status'          => 'pending',
             ]);
         }
     }

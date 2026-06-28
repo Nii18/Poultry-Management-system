@@ -12,12 +12,12 @@ class Flock extends Model
     protected $fillable = [
         'species_id', 'house_id', 'flock_number', 'breed_variety',
         'start_date', 'initial_count', 'current_count', 'source',
-        'production_type', 'is_breeding_stock', 'parity_number',
+        'production_type', 'is_breeding_stock', 'sex', 'parity_number',
         'last_breeding_date', 'expected_delivery_date', 'status',
         'end_date', 'final_count', 'total_weight_kg',
         'average_price_per_kg', 'total_revenue', 'notes', 'created_by'
     ];
-
+    
     protected $casts = [
         'start_date'             => 'date',
         'end_date'               => 'date',
@@ -225,4 +225,14 @@ class Flock extends Model
     {
         return $query->where('is_breeding_stock', true);
     }
+
+    public function scopeMale($query)
+{
+    return $query->where('sex', 'male');
+}
+
+public function scopeFemale($query)
+{
+    return $query->where('sex', 'female');
+}
 }

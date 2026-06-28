@@ -7,6 +7,7 @@ use App\Models\Treatment;
 use App\Models\Flock;
 use App\Models\Notification;
 use App\Helpers\AuditHelper;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -14,6 +15,8 @@ use Carbon\Carbon;
 
 class TreatmentController extends Controller
 {
+
+    public function __construct(protected NotificationService $notifications) {}
     /**
      * Display a listing of treatments
      */
@@ -134,18 +137,20 @@ class TreatmentController extends Controller
             // Create notification for withdrawal period
             if ($withdrawalEndDate && $withdrawalEndDate > now()) {
                 $flock = Flock::find($request->flock_id);
-                Notification::create([
-                    'user_id' => auth()->id(),
-                    'flock_id' => $flock->id,
-                    'type' => 'withdrawal_period',
-                    'title' => 'Withdrawal Period Started',
-                    'message' => "Withdrawal period for {$request->product_name} ends on {$withdrawalEndDate->format('Y-m-d')}",
-                    'severity' => 'info',
-                    'data' => json_encode([
-                        'treatment_id' => $treatment->id,
-                        'withdrawal_end_date' => $withdrawalEndDate
-                    ])
-                ]);
+                $this->notifications->notifyTreatmentStarted(
+                    $flock->id,
+                    $flock->flock_number,
+                    $request->product_name,
+                    $request->diagnosis,
+                    $withdrawalEndDate?->format('Y-m-d')
+                );
+                if ($withdrawalEndDate && $withdrawalEndDate > now()) {
+                    $this->notifications->notifyWithdrawalPeriodActive(
+                        $flock->id, $flock->flock_number,
+                        $request->product_name,
+                        $withdrawalEndDate->format('d M Y')
+                    );
+                }
             }
             
             DB::commit();

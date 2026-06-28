@@ -6,10 +6,10 @@ namespace App\Http\Controllers;
 use App\Models\DailyLog;
 use App\Models\Flock;
 use App\Models\FarmProduce;
-use App\Models\Notification;
 use App\Helpers\AuditHelper;
 use App\Events\HighMortalityAlert;
 use App\Events\AbnormalTemperatureAlert;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +21,8 @@ class DailyLogController extends Controller
     const POULTRY = ['CH', 'QU', 'DK', 'GS', 'TK'];
     const DAIRY   = ['CT', 'GT', 'SH', 'BF'];
     const MEAT    = ['RB', 'PG'];
+
+    public function __construct(protected NotificationService $notifications) {}
 
     /**
      * Display a listing of daily logs
@@ -130,7 +132,6 @@ class DailyLogController extends Controller
                 ], 422);
             }
 
-            // ── Map the generic production fields into the right columns ──
             [$eggsCollected, $eggsDamaged, $speciesMetrics] =
                 $this->resolveProductionFields($request, $speciesCode);
 
@@ -270,7 +271,6 @@ class DailyLogController extends Controller
             $flock       = $dailyLog->flock;
             $speciesCode = $flock->species->code ?? '';
 
-            // ── Map the generic production fields into the right columns ──
             [$eggsCollected, $eggsDamaged, $speciesMetrics] =
                 $this->resolveProductionFields($request, $speciesCode);
 
@@ -291,20 +291,16 @@ class DailyLogController extends Controller
                 'notes'                    => $request->notes,
             ]);
 
-            // Adjust flock count if mortality/culling changed
             if ($lossDiff !== 0) {
                 $flock->update([
                     'current_count' => $flock->current_count - $lossDiff,
                 ]);
             }
 
-            // Reload to get updated attributes for sync
             $dailyLog->refresh();
 
-            // Sync with FarmProduce
             $this->syncFarmProduceFromDailyLog($dailyLog, $flock);
 
-            // Audit trail
             AuditHelper::log(
                 'update',
                 "Updated daily log for flock #{$flock->flock_number} on {$dailyLog->log_date}",
@@ -356,13 +352,11 @@ class DailyLogController extends Controller
             $logDate     = $dailyLog->log_date;
             $speciesCode = $flock->species->code ?? '';
 
-            // Restore flock count
             $totalLoss = $dailyLog->mortality_count + $dailyLog->culling_count;
             $flock->update([
                 'current_count' => $flock->current_count + $totalLoss,
             ]);
 
-            // Delete the matching FarmProduce record for this species' product type
             $productType = $this->getProductTypeForSpecies($speciesCode);
             if ($productType) {
                 FarmProduce::where('flock_id', $dailyLog->flock_id)
@@ -371,7 +365,6 @@ class DailyLogController extends Controller
                     ->delete();
             }
 
-            // Audit trail
             AuditHelper::log(
                 'delete',
                 "Deleted daily log for flock #{$flockNumber} on {$logDate}",
@@ -401,8 +394,6 @@ class DailyLogController extends Controller
 
     /**
      * Get log details as JSON for modal (view + edit).
-     * Returns species_code and a normalised production block.
-     * Raw numeric values are returned so the edit form inputs are pre-filled correctly.
      */
     public function getLogJson($id)
     {
@@ -420,7 +411,6 @@ class DailyLogController extends Controller
                 $metrics = (array) $metrics;
             }
 
-            // Build a normalised production block based on species
             $production = null;
 
             if (in_array($speciesCode, self::POULTRY)) {
@@ -477,7 +467,6 @@ class DailyLogController extends Controller
                     'culling_count'            => $log->culling_count,
                     'total_loss'               => $totalLoss,
                     'mortality_rate'           => $mortalityRate,
-                    // Raw numeric values so edit form number inputs pre-fill correctly
                     'feed_intake_kg'           => $log->feed_intake_kg,
                     'water_consumption_liters' => $log->water_consumption_liters,
                     'average_weight_kg'        => $log->average_weight_kg,
@@ -497,16 +486,6 @@ class DailyLogController extends Controller
 
     // ── PRIVATE HELPERS ──────────────────────────────────────────────────────
 
-    /**
-     * Resolve the generic production form fields (eggs_collected / eggs_damaged)
-     * into the correct database columns based on species code.
-     *
-     * The create/edit form always sends production quantity as `eggs_collected`
-     * and damage as `eggs_damaged` regardless of species — this method maps them
-     * to the right place so non-poultry data lands in species_metrics JSON.
-     *
-     * Returns [$eggsCollected, $eggsDamaged, $speciesMetrics]
-     */
     private function resolveProductionFields(Request $request, string $speciesCode): array
     {
         $rawQty      = (float) ($request->eggs_collected ?? 0);
@@ -514,37 +493,28 @@ class DailyLogController extends Controller
         $baseMetrics = is_array($request->species_metrics) ? $request->species_metrics : [];
 
         if (in_array($speciesCode, self::POULTRY)) {
-            // Eggs live in dedicated columns
             return [$rawQty, $rawDamaged, $baseMetrics ?: null];
         }
 
         if (in_array($speciesCode, self::DAIRY)) {
-            // Milk goes into species_metrics
             $baseMetrics['milk_litres']         = $rawQty;
             $baseMetrics['milk_litres_damaged'] = $rawDamaged;
             return [0, 0, $baseMetrics];
         }
 
         if (in_array($speciesCode, self::MEAT)) {
-            // Meat / live weight goes into species_metrics
             $baseMetrics['meat_kg'] = $rawQty;
             return [0, 0, $baseMetrics];
         }
 
         if ($speciesCode === 'BE') {
-            // Honey goes into species_metrics
             $baseMetrics['honey_kg'] = $rawQty;
             return [0, 0, $baseMetrics];
         }
 
-        // No production for this species — pass through unchanged
         return [0, 0, $baseMetrics ?: null];
     }
 
-    /**
-     * Return the FarmProduce product_type string for a given species code,
-     * or null if the species has no tracked production.
-     */
     private function getProductTypeForSpecies(string $speciesCode): ?string
     {
         if (in_array($speciesCode, self::POULTRY)) return 'eggs';
@@ -554,11 +524,6 @@ class DailyLogController extends Controller
         return null;
     }
 
-    /**
-     * Sync the FarmProduce record when a daily log is created or updated.
-     * Handles eggs, milk, meat, and honey — creates, updates, or deletes
-     * the produce record to stay in sync with the log.
-     */
     public function syncFarmProduceFromDailyLog(DailyLog $log, Flock $flock): void
     {
         $speciesCode = $flock->species->code ?? '';
@@ -569,12 +534,10 @@ class DailyLogController extends Controller
 
         $productType = $this->getProductTypeForSpecies($speciesCode);
 
-        // No known production type for this species
         if (!$productType) {
             return;
         }
 
-        // Determine qty, damaged, and unit based on product type
         switch ($productType) {
             case 'eggs':
                 $qty     = (float) ($log->eggs_collected ?? 0);
@@ -604,7 +567,6 @@ class DailyLogController extends Controller
                 return;
         }
 
-        // Find any existing auto-created produce record for this flock/date/type
         $existing = FarmProduce::where('flock_id', $log->flock_id)
             ->where('product_type', $productType)
             ->whereDate('produce_date', $log->log_date)
@@ -634,7 +596,6 @@ class DailyLogController extends Controller
                 ]);
             }
         } else {
-            // Quantity is zero — remove the produce record if it exists
             if ($existing) {
                 $existing->delete();
             }
@@ -642,81 +603,55 @@ class DailyLogController extends Controller
     }
 
     /**
-     * Check for alerts based on daily log data
+     * Check for alerts based on daily log data.
+     * Uses NotificationService instead of inline Notification::create() calls.
      */
     private function checkForAlerts(DailyLog $log, Flock $flock): void
     {
-        // High mortality check
+        // ── High mortality ────────────────────────────────────────
         $dailyMortalityRate = ($log->mortality_count + $log->culling_count)
             / max($flock->current_count, 1) * 100;
 
         if ($dailyMortalityRate > 3) {
-            Notification::create([
-                'user_id'  => auth()->id(),
-                'flock_id' => $flock->id,
-                'type'     => 'high_mortality',
-                'title'    => 'High Mortality Detected',
-                'message'  => "High mortality rate of " . round($dailyMortalityRate, 2)
-                              . "% detected in flock {$flock->flock_number}",
-                'severity' => 'critical',
-                'data'     => json_encode([
-                    'flock_id'        => $flock->id,
-                    'log_id'          => $log->id,
-                    'mortality_rate'  => $dailyMortalityRate,
-                    'mortality_count' => $log->mortality_count,
-                    'culling_count'   => $log->culling_count,
-                ]),
-            ]);
+            $this->notifications->notifyHighMortality(
+                $flock->id,
+                $flock->flock_number,
+                $dailyMortalityRate,
+                $log->mortality_count,
+                $log->culling_count
+            );
 
             event(new HighMortalityAlert($flock, $log, $dailyMortalityRate));
         }
 
-        // Temperature check
+        // ── High temperature ──────────────────────────────────────
         $optimalTemp = $this->getOptimalTemperature(
             $flock->age_in_days,
             $flock->species->code
         );
 
         if ($log->max_temperature_c && $log->max_temperature_c > ($optimalTemp + 3)) {
-            Notification::create([
-                'user_id'  => auth()->id(),
-                'flock_id' => $flock->id,
-                'type'     => 'high_temperature',
-                'title'    => 'Temperature Alert',
-                'message'  => "High temperature detected: {$log->max_temperature_c}°C"
-                              . " in house {$flock->house->name}",
-                'severity' => 'warning',
-                'data'     => json_encode([
-                    'flock_id'    => $flock->id,
-                    'temperature' => $log->max_temperature_c,
-                    'optimal'     => $optimalTemp,
-                ]),
-            ]);
+            $this->notifications->notifyHighTemperature(
+                $flock->id,
+                $flock->flock_number,
+                $flock->house->name ?? 'Unknown house',
+                $log->max_temperature_c,
+                $optimalTemp
+            );
 
             event(new AbnormalTemperatureAlert($flock, $log, 'high'));
         }
 
-        // Ammonia check
+        // ── High ammonia ──────────────────────────────────────────
         if ($log->ammonia_ppm && $log->ammonia_ppm > 25) {
-            Notification::create([
-                'user_id'  => auth()->id(),
-                'flock_id' => $flock->id,
-                'type'     => 'high_ammonia',
-                'title'    => 'High Ammonia Levels',
-                'message'  => "High ammonia level of {$log->ammonia_ppm}ppm detected."
-                              . " Risk of respiratory issues.",
-                'severity' => 'warning',
-                'data'     => json_encode([
-                    'flock_id'    => $flock->id,
-                    'ammonia_ppm' => $log->ammonia_ppm,
-                ]),
-            ]);
+            $this->notifications->notifyHighAmmonia(
+                $flock->id,
+                $flock->flock_number,
+                $log->ammonia_ppm
+            );
         }
     }
 
-    /**
-     * Get optimal temperature based on species and age
-     */
     private function getOptimalTemperature(int $ageInDays, string $speciesCode): int
     {
         if ($speciesCode === 'CH') {

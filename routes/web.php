@@ -501,6 +501,15 @@ Route::get('/api/notifications', [NotificationController::class, 'apiNotificatio
         Route::post('/alerts', [SettingsController::class, 'updateAlerts'])->name('update-alerts');
         Route::post('/clear-cache', [SettingsController::class, 'clearCache'])->name('clear-cache');
         Route::get('/backup', [SettingsController::class, 'backupDatabase'])->name('backup');
+
+
+        Route::post('/notifications',       [SettingsController::class, 'updateNotifications'])->name('update-notifications');
+        Route::post('/production',          [SettingsController::class, 'updateProduction'])   ->name('update-production');
+        Route::post('/security',            [SettingsController::class, 'updateSecurity'])     ->name('update-security');
+        Route::post('/reporting',           [SettingsController::class, 'updateReporting'])    ->name('update-reporting');
+        Route::post('/integrations',        [SettingsController::class, 'updateIntegrations']) ->name('update-integrations');
+        Route::post('/audit',               [SettingsController::class, 'updateAudit'])        ->name('update-audit');
+        Route::post('/test-email',          [SettingsController::class, 'testEmail'])          ->name('test-email');
     });
     
     // Analytics - Admin and Manager only

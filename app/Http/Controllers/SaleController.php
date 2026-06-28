@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Sale;
 use App\Models\Flock;
 use App\Models\FarmProduce;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +52,8 @@ class SaleController extends Controller
         'eggs_box'   => 360,
         'eggs'       => 1,
     ];
+
+    public function __construct(protected NotificationService $notifications) {}
 
     // ──────────────────────────────────────────────────────────────
     // INDEX
@@ -199,6 +202,13 @@ class SaleController extends Controller
                 'notes'          => $request->notes,
                 'created_by'     => auth()->id(),
             ]);
+
+            $this->notifications->notifySaleRecorded(
+                $sale->product_type,
+                $sale->quantity,
+                $sale->total_amount,
+                auth()->user()->name
+            );
 
             return response()->json([
                 'success' => true,

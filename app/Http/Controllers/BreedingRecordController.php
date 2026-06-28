@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 use App\Models\BreedingRecord;
 use App\Models\Flock;
 use App\Models\OffspringRecord;
+use App\Services\NotificationService;
 use App\Helpers\AuditHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -14,6 +15,8 @@ use Carbon\Carbon;
 
 class BreedingRecordController extends Controller
 {
+    
+public function __construct(protected NotificationService $notifications) {}
     /**
      * Display a listing of breeding records
      */
@@ -40,7 +43,7 @@ class BreedingRecordController extends Controller
         $records = $query->orderBy('breeding_date', 'desc')
             ->paginate(20);
         
-        $flocks = Flock::where('is_breeding_stock', true)->get();
+         $flocks = Flock::where('status', 'active')->get();
         
         return view('breeding-records.index', compact('records', 'flocks', 'flockId', 'status'));
     }
@@ -57,15 +60,8 @@ class BreedingRecordController extends Controller
             $flock = Flock::with('species')->findOrFail($flockId);
         }
         
-        $femaleFlocks = Flock::where('is_breeding_stock', true)
-            ->where('species_id', $flock ? $flock->species_id : null)
-            ->where('status', 'active')
-            ->get();
-        
-        $maleFlocks = Flock::where('is_breeding_stock', true)
-            ->where('species_id', $flock ? $flock->species_id : null)
-            ->where('status', 'active')
-            ->get();
+        $femaleFlocks = Flock::where('status', 'active')->get();  
+        $maleFlocks = Flock::where('status', 'active')->get();
         
         return view('breeding-records.create', compact('femaleFlocks', 'maleFlocks', 'flock'));
     }
@@ -292,6 +288,14 @@ class BreedingRecordController extends Controller
             );
             
             DB::commit();
+
+            $flock = Flock::find($record->flock_id);
+$this->notifications->notifyBreedingDelivery(
+    $record->flock_id,
+    $flock->flock_number ?? 'Unknown',
+    $record->offspring_count ?? 0,
+    $record->stillborn_count ?? 0
+);
             
             return redirect()->route('breeding-records.show', $record->id)
                 ->with('success', 'Delivery recorded successfully');
@@ -397,6 +401,14 @@ class BreedingRecordController extends Controller
                 );
                 
                 DB::commit();
+
+                $flock = Flock::find($record->flock_id);
+                $this->notifications->notifyBreedingDelivery(
+                    $record->flock_id,
+                    $flock->flock_number ?? 'Unknown',
+                    $record->offspring_count ?? 0,
+                    $record->stillborn_count ?? 0
+                );
                 
                 return response()->json(['success' => true, 'message' => 'Delivery recorded successfully']);
             } catch (\Exception $e) {
@@ -415,7 +427,6 @@ class BreedingRecordController extends Controller
 {
     $femaleFlocks = Flock::with('species')
         ->where('status', 'active')
-        ->where('is_breeding_stock', true)
         ->get()
         ->map(fn($f) => [
             'id' => $f->id,
@@ -427,7 +438,6 @@ class BreedingRecordController extends Controller
 
     $maleFlocks = Flock::with('species')
         ->where('status', 'active')
-        ->where('is_breeding_stock', true)
         ->get()
         ->map(fn($f) => [
             'id' => $f->id,

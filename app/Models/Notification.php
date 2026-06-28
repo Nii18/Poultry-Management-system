@@ -10,7 +10,7 @@ class Notification extends Model
 {
     protected $fillable = [
         'user_id', 'flock_id', 'type', 'title', 'message',
-        'severity', 'data', 'read_at', 'sent_at', 'created_by'
+        'severity', 'data', 'read_at', 'sent_at', 'created_by',
     ];
     
     protected $casts = [

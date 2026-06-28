@@ -155,6 +155,7 @@
                             <th class="py-3">Species</th>
                             <th class="py-3">House</th>
                             <th class="py-3">Breed</th>
+                            <th class="py-3">Sex</th>
                             <th class="py-3">Age</th>
                             <th class="py-3">
                                 Population
@@ -194,6 +195,17 @@
                             <td>{{ $flock->species->name ?? 'N/A' }}</td>
                             <td>{{ $flock->house->name  ?? 'N/A' }}</td>
                             <td>{{ $flock->breed_variety }}</td>
+
+                            {{-- Sex --}}
+                            <td>
+                                @if($flock->sex === 'female')
+                                    <span class="sex-badge sex-female"><i class="fas fa-venus me-1"></i>Female</span>
+                                @elseif($flock->sex === 'male')
+                                    <span class="sex-badge sex-male"><i class="fas fa-mars me-1"></i>Male</span>
+                                @else
+                                    <span class="text-muted small fst-italic">Not set</span>
+                                @endif
+                            </td>
 
                             {{-- Age --}}
                             <td>
@@ -322,7 +334,7 @@
                         </tr>
                         @empty
                         <tr>
-                            <td colspan="11" class="text-center py-5">
+                            <td colspan="12" class="text-center py-5">
                                 <div class="empty-state">
                                     <i class="fas fa-tractor fa-3x text-muted mb-3"></i>
                                     <h5 class="text-muted">No Flocks Found</h5>
@@ -521,6 +533,22 @@
                                    placeholder="e.g. Broiler, Friesian, New Zealand White">
                         </div>
 
+                        {{-- Sex --}}
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">
+                                Sex <span class="text-danger">*</span>
+                                <i class="fas fa-circle-info text-muted ms-1"
+                                   title="All animals in this flock must be the same sex. This determines which side of a breeding pairing the flock can be used for (dam or sire)."
+                                   data-bs-toggle="tooltip"></i>
+                            </label>
+                            <select name="sex" class="form-select" required>
+                                <option value="">Select Sex</option>
+                                <option value="female">Female (Hens / Does / Dams)</option>
+                                <option value="male">Male (Cocks / Bucks / Sires)</option>
+                            </select>
+                            <small class="text-muted">Required for pairing in Breeding Records</small>
+                        </div>
+
                         {{-- Start Date --}}
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Start Date <span class="text-danger">*</span></label>
@@ -667,6 +695,15 @@
     .table th { font-weight:600;font-size:.875rem;color:#475569;border-bottom-width:1px; }
     .table td { font-size:.875rem;color:#334155;vertical-align:middle; }
 
+    /* ── Sex badge ─────────────────────────────────────────── */
+    .sex-badge {
+        display:inline-flex;align-items:center;
+        font-size:.75rem;font-weight:600;
+        padding:.35rem .75rem;border-radius:20px;
+    }
+    .sex-badge.sex-female { background:#fce7f3;color:#9d174d; }
+    .sex-badge.sex-male   { background:#dbeafe;color:#1e40af; }
+
     /* ── Breeder badge ─────────────────────────────────────── */
     .breeder-badge {
         display:inline-flex;align-items:center;
@@ -773,6 +810,11 @@ function escapeHtml(str) {
 }
 function fmt(n)  { return Number(n ?? 0).toLocaleString(); }
 function pct(n)  { return Number(n ?? 0).toFixed(1); }
+function sexLabel(sex) {
+    if (sex === 'female') return '<span class="sex-badge sex-female"><i class="fas fa-venus me-1"></i>Female</span>';
+    if (sex === 'male')   return '<span class="sex-badge sex-male"><i class="fas fa-mars me-1"></i>Male</span>';
+    return '<span class="text-muted small fst-italic">Not set</span>';
+}
 
 // ── Bootstrap tooltips ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
@@ -959,6 +1001,7 @@ document.querySelectorAll('.view-flock-btn').forEach(btn => {
                     <div class="detail-item"><span class="detail-label">Species</span><span class="detail-value">${escapeHtml(f.species_name)} <span class="text-muted">(${escapeHtml(f.species_code)})</span></span></div>
                     <div class="detail-item"><span class="detail-label">House</span><span class="detail-value">${escapeHtml(f.house_name)}</span></div>
                     <div class="detail-item"><span class="detail-label">Breed / Variety</span><span class="detail-value">${escapeHtml(f.breed_variety)}</span></div>
+                    <div class="detail-item"><span class="detail-label">Sex</span><span class="detail-value">${sexLabel(f.sex)}</span></div>
                     <div class="detail-item"><span class="detail-label">Start Date</span><span class="detail-value">${escapeHtml(f.start_date)}</span></div>
                     <div class="detail-item"><span class="detail-label">Source</span><span class="detail-value">${escapeHtml(f.source || 'N/A')}</span></div>
                     <div class="detail-item"><span class="detail-label">Production Purpose</span><span class="detail-value">${escapeHtml(prodLabels[f.production_type] ?? f.production_type)}</span></div>
@@ -1063,6 +1106,14 @@ document.querySelectorAll('.edit-flock-btn').forEach(btn => {
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Breed/Variety <span class="text-danger">*</span></label>
                             <input type="text" name="breed_variety" class="form-control" value="${escapeHtml(f.breed_variety)}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Sex <span class="text-danger">*</span></label>
+                            <select name="sex" class="form-select" required>
+                                <option value="">Select Sex</option>
+                                <option value="female" ${f.sex==='female'?'selected':''}>Female (Hens / Does / Dams)</option>
+                                <option value="male" ${f.sex==='male'?'selected':''}>Male (Cocks / Bucks / Sires)</option>
+                            </select>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">House <span class="text-danger">*</span></label>

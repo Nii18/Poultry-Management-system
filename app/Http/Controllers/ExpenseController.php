@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 use App\Models\Expense;
 use App\Models\Flock;
 use App\Models\House;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +14,8 @@ use Carbon\Carbon;
 
 class ExpenseController extends Controller
 {
+
+    public function __construct(protected NotificationService $notifications) {}
     /**
      * Display a listing of expenses
      */
@@ -172,6 +175,13 @@ class ExpenseController extends Controller
                 'created_by' => auth()->id()
             ]);
             
+            $this->notifications->notifyExpenseRecorded(
+                $expense->amount,
+                $expense->category,
+                $expense->description,
+                auth()->user()->name
+            );
+
             if ($request->ajax() || $request->expectsJson()) {
                 return response()->json(['success' => true, 'message' => 'Expense recorded successfully']);
             }
