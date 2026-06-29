@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class FlockController extends Controller
 {
@@ -37,12 +38,23 @@ class FlockController extends Controller
 
         $flocks = $query->orderBy('start_date', 'desc')->paginate(10);
 
-        $totalAnimals = $flocks->getCollection()->sum(fn ($f) => $f->current_count);
+        // Stats computed across ALL matching records, not just the current page.
+        $statsQuery = Flock::query();
+        if ($speciesId) $statsQuery->where('species_id', $speciesId);
+        if ($status)    $statsQuery->where('status', $status);
+
+        $allFlocks    = $statsQuery->with(['dailyLogs', 'breederLogs'])->get();
+        $totalFlocks  = $allFlocks->count();
+        $activeFlocks = $allFlocks->where('status', 'active')->count();
+        $totalAnimals = $allFlocks->sum(fn ($f) => $f->current_count);
+        $avgMortality = $allFlocks->avg(fn ($f) => $f->mortality_rate) ?? 0;
 
         $species = Species::where('is_active', true)->get();
+        $houses  = House::where('status', 'active')->get();
 
         return view('flocks.index', compact(
-            'flocks', 'species', 'speciesId', 'status', 'totalAnimals'
+            'flocks', 'species', 'houses', 'speciesId', 'status',
+            'totalAnimals', 'totalFlocks', 'activeFlocks', 'avgMortality'
         ));
     }
 
@@ -62,13 +74,6 @@ class FlockController extends Controller
     // STORE
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /**
-     * The front-end always calls this via fetch() with Accept: application/json,
-     * so every return path — including the catch block — MUST return JSON.
-     * Returning back()->with('error', ...) from a catch block causes the browser
-     * to receive an HTML redirect, which then fails JSON.parse with
-     * "Unexpected token '<'".
-     */
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -85,7 +90,6 @@ class FlockController extends Controller
             'notes'           => 'nullable|string',
         ]);
 
-        // Cross-field: breeders can't exceed initial count
         $validator->after(function ($v) use ($request) {
             $breeder = (int) ($request->breeder_count ?? 0);
             $initial = (int) ($request->initial_count ?? 0);
@@ -98,7 +102,6 @@ class FlockController extends Controller
         });
 
         if ($validator->fails()) {
-            // Always return JSON — the form is submitted via fetch()
             return response()->json([
                 'success' => false,
                 'errors'  => $validator->errors(),
@@ -120,7 +123,6 @@ class FlockController extends Controller
                 'sex'               => $request->sex,
                 'start_date'        => $request->start_date,
                 'initial_count'     => $initialCount,
-                'current_count'     => $initialCount,
                 'source'            => $request->source,
                 'production_type'   => $request->production_type,
                 'is_breeding_stock' => false,
@@ -160,9 +162,6 @@ class FlockController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
-            // CRITICAL: Always return JSON here. The original code returned
-            // back()->with('error', ...) which is an HTML redirect — that is
-            // what caused "Unexpected token '<'" in the browser's JSON.parse.
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create flock: ' . $e->getMessage(),
@@ -327,17 +326,20 @@ class FlockController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return back()->withErrors($validator)->withInput();
+            return redirect()->route('flocks.index')
+                ->with('swal_error', $validator->errors()->first());
         }
 
         $flock = Flock::findOrFail($id);
 
         if ($request->final_count > $flock->initial_count) {
-            return back()->with('error', 'Final count cannot exceed initial count.');
+            return redirect()->route('flocks.index')
+                ->with('swal_error', 'Final count cannot exceed initial count.');
         }
 
         if ($request->end_date < $flock->start_date) {
-            return back()->with('error', 'End date must be after start date.');
+            return redirect()->route('flocks.index')
+                ->with('swal_error', 'End date must be after start date.');
         }
 
         DB::beginTransaction();
@@ -364,17 +366,23 @@ class FlockController extends Controller
                 $flock->toArray()
             );
 
-            $this->calculatePerformanceMetrics($flock);
-
             DB::commit();
-
-            return redirect()->route('flocks.show', $flock)
-                ->with('success', 'Flock closed successfully');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Failed to close flock: ' . $e->getMessage());
+            return redirect()->route('flocks.index')
+                ->with('swal_error', 'Failed to close flock: ' . $e->getMessage());
         }
+
+        // Outside the transaction — a metrics failure won't undo the close
+        try {
+            $this->calculatePerformanceMetrics($flock);
+        } catch (\Exception $e) {
+            Log::error("Performance metrics failed for flock {$flock->id}: " . $e->getMessage());
+        }
+
+        return redirect()->route('flocks.index')
+            ->with('swal_success', "Flock #{$flock->flock_number} has been closed successfully.");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -415,7 +423,7 @@ class FlockController extends Controller
             }
 
             return redirect()->route('flocks.index')
-                ->with('success', 'Flock deleted successfully');
+                ->with('swal_success', "Flock #{$flockNumber} deleted successfully.");
 
         } catch (\Exception $e) {
             if ($request->expectsJson()) {
@@ -424,7 +432,8 @@ class FlockController extends Controller
                     'message' => 'Failed to delete flock: ' . $e->getMessage(),
                 ], 500);
             }
-            return back()->with('error', 'Failed to delete flock: ' . $e->getMessage());
+            return redirect()->route('flocks.index')
+                ->with('swal_error', 'Failed to delete flock: ' . $e->getMessage());
         }
     }
 
@@ -635,8 +644,8 @@ class FlockController extends Controller
 
     private function generateFlockNumber($speciesId, $houseId): string
     {
-        $species = Species::find($speciesId);
-        $house   = House::find($houseId);
+        $species = Species::findOrFail($speciesId);
+        $house   = House::findOrFail($houseId);
         $year    = Carbon::now()->format('Y');
 
         $count = Flock::where('species_id', $speciesId)

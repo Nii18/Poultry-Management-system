@@ -179,7 +179,7 @@ Route::middleware(['auth'])->group(function () {
 });
     
     // Flock Management - Admin, Manager, and Head Worker
-    Route::prefix('flocks')->name('flocks.')->middleware(['role:admin,manager,head_worker'])->group(function () {
+    Route::prefix('flocks')->name('flocks.')->middleware(['role:admin,manager'])->group(function () {
         Route::get('/', [FlockController::class, 'index'])->name('index');
         Route::get('/create', [FlockController::class, 'create'])->name('create');
         Route::post('/', [FlockController::class, 'store'])->name('store');

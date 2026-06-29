@@ -39,7 +39,7 @@
                     </div>
                     <div class="stat-card-info">
                         <span class="stat-card-label">Total Flocks</span>
-                        <h3 class="stat-card-value">{{ $flocks->total() }}</h3>
+                        <h3 class="stat-card-value">{{ $totalFlocks }}</h3>
                     </div>
                 </div>
             </div>
@@ -52,7 +52,7 @@
                     </div>
                     <div class="stat-card-info">
                         <span class="stat-card-label">Active Flocks</span>
-                        <h3 class="stat-card-value">{{ $flocks->getCollection()->where('status','active')->count() }}</h3>
+                        <h3 class="stat-card-value">{{ $activeFlocks }}</h3>
                     </div>
                 </div>
             </div>
@@ -78,9 +78,7 @@
                     </div>
                     <div class="stat-card-info">
                         <span class="stat-card-label">Avg Mortality Rate</span>
-                        <h3 class="stat-card-value">
-                            {{ number_format($flocks->getCollection()->avg(fn($f) => $f->mortality_rate), 1) }}%
-                        </h3>
+                        <h3 class="stat-card-value">{{ number_format($avgMortality, 1) }}%</h3>
                     </div>
                 </div>
             </div>
@@ -128,7 +126,7 @@
                             <i class="fas fa-flag-checkered me-1 text-muted"></i>Status
                         </label>
                         <select class="form-select" id="statusFilter">
-                            <option value="active"      {{ request('status','active') == 'active'      ? 'selected' : '' }}>Active</option>
+                            <option value="active"      {{ request('status', 'active') == 'active'      ? 'selected' : '' }}>Active</option>
                             <option value="closed"      {{ request('status') == 'closed'               ? 'selected' : '' }}>Closed</option>
                             <option value="quarantined" {{ request('status') == 'quarantined'          ? 'selected' : '' }}>Quarantined</option>
                         </select>
@@ -157,9 +155,7 @@
                             <th class="py-3">Breed</th>
                             <th class="py-3">Sex</th>
                             <th class="py-3">Age</th>
-                            <th class="py-3">
-                                Population
-                            </th>
+                            <th class="py-3">Population</th>
                             <th class="py-3">Breeders</th>
                             <th class="py-3">Sellable</th>
                             <th class="py-3">Mortality %</th>
@@ -372,9 +368,7 @@
                         @endphp
 
                         @if($s > 1)
-                            <li class="page-item">
-                                <a class="page-link" href="{{ $flocks->url(1) }}">1</a>
-                            </li>
+                            <li class="page-item"><a class="page-link" href="{{ $flocks->url(1) }}">1</a></li>
                             @if($s > 2)
                                 <li class="page-item disabled"><span class="page-link">…</span></li>
                             @endif
@@ -394,9 +388,7 @@
                             @if($e < $last - 1)
                                 <li class="page-item disabled"><span class="page-link">…</span></li>
                             @endif
-                            <li class="page-item">
-                                <a class="page-link" href="{{ $flocks->url($last) }}">{{ $last }}</a>
-                            </li>
+                            <li class="page-item"><a class="page-link" href="{{ $flocks->url($last) }}">{{ $last }}</a></li>
                         @endif
                         @if($flocks->hasMorePages())
                             <li class="page-item"><a class="page-link" href="{{ $flocks->nextPageUrl() }}">Next ›</a></li>
@@ -486,9 +478,6 @@
 
 {{-- ══════════════════════════════════════════════════════════════════════
      CREATE FLOCK MODAL
-     — No green panel. All fields use the same plain form-control style.
-     — Sellable preview sits directly below Initial Count as a read-only
-       helper field (col-md-6), matching the grid of every other row.
 ══════════════════════════════════════════════════════════════════════ --}}
 <div class="modal fade" id="createFlockModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -518,7 +507,7 @@
                             <label class="form-label fw-semibold">House <span class="text-danger">*</span></label>
                             <select name="house_id" class="form-select" required>
                                 <option value="">Select House</option>
-                                @foreach(\App\Models\House::where('status','active')->get() as $house)
+                                @foreach($houses as $house)
                                     <option value="{{ $house->id }}">
                                         {{ $house->name }} (Capacity: {{ number_format($house->capacity) }})
                                     </option>
@@ -538,7 +527,7 @@
                             <label class="form-label fw-semibold">
                                 Sex <span class="text-danger">*</span>
                                 <i class="fas fa-circle-info text-muted ms-1"
-                                   title="All animals in this flock must be the same sex. This determines which side of a breeding pairing the flock can be used for (dam or sire)."
+                                   title="All animals in this flock must be the same sex."
                                    data-bs-toggle="tooltip"></i>
                             </label>
                             <select name="sex" class="form-select" required>
@@ -580,7 +569,7 @@
                             <small class="text-muted">Animals retained for reproduction — not for sale</small>
                         </div>
 
-                        {{-- Sellable preview — plain read-only field, same col width --}}
+                        {{-- Sellable preview --}}
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">
                                 Sellable Animals
@@ -601,12 +590,7 @@
 
                         {{-- Production Type --}}
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold">
-                                Production Purpose
-                                <i class="fas fa-circle-info text-muted ms-1"
-                                   title="What this flock is primarily raised for"
-                                   data-bs-toggle="tooltip"></i>
-                            </label>
+                            <label class="form-label fw-semibold">Production Purpose</label>
                             <select name="production_type" class="form-select">
                                 <option value="meat">Meat — raised for slaughter</option>
                                 <option value="eggs">Eggs — laying flock</option>
@@ -621,14 +605,12 @@
                             <label class="form-label fw-semibold">
                                 Parity Number
                                 <i class="fas fa-circle-info text-muted ms-1"
-                                   title="How many times the females in this group have given birth (0 = never given birth, 1 = one litter/birth, 2 = two, etc.). Most relevant for pigs, dairy cows, and rabbits. Leave blank if not applicable."
+                                   title="How many times the females in this group have given birth. Leave blank if not applicable."
                                    data-bs-toggle="tooltip"></i>
                             </label>
                             <input type="number" name="parity_number" class="form-control" min="0"
                                    placeholder="e.g. 0 = first-time, 1 = one birth before">
-                            <small class="text-muted">
-                                Number of previous birth cycles. Leave blank if unknown or not applicable.
-                            </small>
+                            <small class="text-muted">Leave blank if unknown or not applicable.</small>
                         </div>
 
                         {{-- Notes --}}
@@ -663,13 +645,11 @@
 
 @push('styles')
 <style>
-    /* ── Page ──────────────────────────────────────────────── */
     .page-header { margin-bottom:1.5rem; }
     .page-icon   { width:50px;height:50px;display:flex;align-items:center;justify-content:center;
                    background:linear-gradient(135deg,#e8f4f8,#d1e9f0);border-radius:12px; }
     .page-title  { font-size:1.75rem;font-weight:600;color:#1e293b; }
 
-    /* ── Stat cards ────────────────────────────────────────── */
     .stat-card         { background:#fff;border-radius:16px;padding:1rem;transition:all .3s;border:1px solid #e2e8f0; }
     .stat-card:hover   { transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,0,0,.05); }
     .stat-card-body    { display:flex;align-items:center;gap:1rem; }
@@ -678,57 +658,36 @@
     .stat-card-label   { font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:#64748b;font-weight:600; }
     .stat-card-value   { font-size:1.75rem;font-weight:700;margin:0;line-height:1.2;color:#1e293b; }
 
-    /* ── Soft bg ───────────────────────────────────────────── */
     .bg-primary-soft   { background:#e0f2fe; }
     .bg-success-soft   { background:#dcfce7; }
     .bg-warning-soft   { background:#fef3c7; }
     .bg-info-soft      { background:#d1fae5; }
-
-    /* ── Status soft badges ────────────────────────────────── */
-    .bg-success-soft   { background:#dcfce7;color:#166534; }
     .bg-secondary-soft { background:#f1f5f9;color:#475569; }
     .bg-danger-soft    { background:#fee2e2;color:#991b1b; }
-    .bg-info-soft      { background:#d1fae5;color:#065f46; }
     .badge             { font-weight:500;font-size:.75rem; }
 
-    /* ── Table ─────────────────────────────────────────────── */
     .table th { font-weight:600;font-size:.875rem;color:#475569;border-bottom-width:1px; }
     .table td { font-size:.875rem;color:#334155;vertical-align:middle; }
 
-    /* ── Sex badge ─────────────────────────────────────────── */
-    .sex-badge {
-        display:inline-flex;align-items:center;
-        font-size:.75rem;font-weight:600;
-        padding:.35rem .75rem;border-radius:20px;
-    }
+    .sex-badge { display:inline-flex;align-items:center;font-size:.75rem;font-weight:600;
+                 padding:.35rem .75rem;border-radius:20px; }
     .sex-badge.sex-female { background:#fce7f3;color:#9d174d; }
     .sex-badge.sex-male   { background:#dbeafe;color:#1e40af; }
 
-    /* ── Breeder badge ─────────────────────────────────────── */
-    .breeder-badge {
-        display:inline-flex;align-items:center;
-        background:linear-gradient(135deg,#ede9fe,#ddd6fe);
-        color:#5b21b6;font-size:.75rem;
-        padding:.35rem .75rem;border-radius:20px;font-weight:600;
-    }
+    .breeder-badge { display:inline-flex;align-items:center;
+                     background:linear-gradient(135deg,#ede9fe,#ddd6fe);
+                     color:#5b21b6;font-size:.75rem;
+                     padding:.35rem .75rem;border-radius:20px;font-weight:600; }
 
-    /* ── Breeder outline button ────────────────────────────── */
     .btn-outline-breeder { color:#7c3aed;border-color:#7c3aed;transition:all .2s; }
     .btn-outline-breeder:hover { background:#7c3aed;border-color:#7c3aed;color:#fff; }
 
-    /* ── Sellable read-only field error state ──────────────── */
     #cf_sellable_display.is-invalid { border-color:#dc3545 !important;background:#fff5f5 !important; }
 
-    /* ── Population chip strip (view modal) ────────────────── */
-    .pop-strip {
-        display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;
-        background:#f8fafc;border:1px solid #e2e8f0;
-        border-radius:12px;padding:.875rem 1rem;
-    }
-    .pop-chip {
-        display:inline-flex;align-items:center;gap:.5rem;
-        padding:.4rem .9rem;border-radius:30px;font-weight:700;font-size:.82rem;
-    }
+    .pop-strip { display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;
+                 background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:.875rem 1rem; }
+    .pop-chip  { display:inline-flex;align-items:center;gap:.5rem;
+                 padding:.4rem .9rem;border-radius:30px;font-weight:700;font-size:.82rem; }
     .pop-chip .pop-label { font-size:.65rem;text-transform:uppercase;letter-spacing:.04em;opacity:.8;display:block; }
     .pop-chip.initial  { background:#e0f2fe;color:#0369a1; }
     .pop-chip.current  { background:#dcfce7;color:#166534; }
@@ -736,7 +695,6 @@
     .pop-chip.breeder  { background:#ede9fe;color:#5b21b6; }
     .pop-chip.sellable { background:#d1fae5;color:#065f46; }
 
-    /* ── Detail sections (view modal) ──────────────────────── */
     .detail-section    { margin-bottom:1.5rem; }
     .detail-section h6 { font-weight:600;color:#1e293b;margin-bottom:1rem;
                          padding-bottom:.5rem;border-bottom:2px solid #e2e8f0; }
@@ -745,55 +703,37 @@
     .detail-label      { font-size:.7rem;text-transform:uppercase;color:#64748b;font-weight:600;margin-bottom:.25rem; }
     .detail-value      { font-size:.95rem;font-weight:500;color:#1e293b; }
 
-    /* ── Breeder timeline ──────────────────────────────────── */
     .breeder-timeline { position:relative;padding-left:2rem; }
-    .breeder-timeline::before {
-        content:'';position:absolute;left:.75rem;top:0;bottom:0;
-        width:2px;background:linear-gradient(180deg,#7c3aed22,#7c3aed66,#7c3aed22);border-radius:2px;
-    }
+    .breeder-timeline::before { content:'';position:absolute;left:.75rem;top:0;bottom:0;
+        width:2px;background:linear-gradient(180deg,#7c3aed22,#7c3aed66,#7c3aed22);border-radius:2px; }
     .timeline-entry { position:relative;margin-bottom:1.25rem; }
-    .timeline-entry::before {
-        content:'';position:absolute;left:-1.4rem;top:.65rem;
+    .timeline-entry::before { content:'';position:absolute;left:-1.4rem;top:.65rem;
         width:12px;height:12px;border-radius:50%;
-        background:#7c3aed;border:2px solid #fff;box-shadow:0 0 0 3px #ede9fe;
-    }
+        background:#7c3aed;border:2px solid #fff;box-shadow:0 0 0 3px #ede9fe; }
     .timeline-entry:first-child::before { background:#059669;box-shadow:0 0 0 3px #dcfce7; }
     .timeline-card { background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:.875rem 1rem;transition:all .2s; }
     .timeline-card:hover { border-color:#a78bfa;box-shadow:0 2px 8px rgba(124,58,237,.08); }
     .timeline-card.latest { background:linear-gradient(135deg,#fdf4ff,#ede9fe);border-color:#a78bfa; }
 
-    /* ── Count pills ───────────────────────────────────────── */
     .count-pill { display:inline-flex;align-items:center;gap:.4rem;
                   padding:.45rem 1rem;border-radius:30px;font-weight:700;font-size:.85rem; }
     .count-pill.breeder  { background:#ede9fe;color:#5b21b6; }
     .count-pill.sellable { background:#dcfce7;color:#166534; }
     .count-pill.total    { background:#e0f2fe;color:#0369a1; }
 
-    /* ── Breeder form panel ────────────────────────────────── */
-    .breeder-form-panel {
-        background:linear-gradient(135deg,#fdf4ff,#f5f3ff);
-        border:1.5px solid #a78bfa;border-radius:16px;padding:1.25rem;
-    }
+    .breeder-form-panel { background:linear-gradient(135deg,#fdf4ff,#f5f3ff);
+                          border:1.5px solid #a78bfa;border-radius:16px;padding:1.25rem; }
+    .filter-section     { background:#f8fafc;border-radius:12px; }
+    .progress           { background-color:#e2e8f0;border-radius:10px;overflow:hidden; }
 
-    /* ── Filter ────────────────────────────────────────────── */
-    .filter-section { background:#f8fafc;border-radius:12px; }
-
-    /* ── Progress ──────────────────────────────────────────── */
-    .progress { background-color:#e2e8f0;border-radius:10px;overflow:hidden; }
-
-    /* ── Pagination ────────────────────────────────────────── */
     .page-link { border-radius:8px;margin:0 2px;border:none;color:#475569;padding:.5rem .875rem; }
     .page-item.active .page-link { background-color:#0d6efd;color:#fff; }
     .page-link:hover { background-color:#e2e8f0;color:#0d6efd; }
 
-    /* ── Modals ────────────────────────────────────────────── */
     .modal-header { padding:1rem 1.5rem; }
-
-    /* ── SweetAlert ────────────────────────────────────────── */
-    .swal2-popup { border-radius:16px!important; }
+    .swal2-popup  { border-radius:16px!important; }
     .swal2-html-container .form-control {
-        border-radius:8px;border:1px solid #e2e8f0;padding:8px 12px;width:100%;box-sizing:border-box;
-    }
+        border-radius:8px;border:1px solid #e2e8f0;padding:8px 12px;width:100%;box-sizing:border-box; }
 </style>
 @endpush
 
@@ -801,6 +741,28 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 const CSRF = '{{ csrf_token() }}';
+
+// ── Session SweetAlerts (fired after redirect from close/delete) ───────────────
+@if(session('swal_success'))
+    Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        text: '{{ session('swal_success') }}',
+        timer: 3000,
+        timerProgressBar: true,
+        showConfirmButton: false,
+        confirmButtonColor: '#0d6efd',
+    });
+@endif
+
+@if(session('swal_error'))
+    Swal.fire({
+        icon: 'error',
+        title: 'Something went wrong',
+        text: '{{ session('swal_error') }}',
+        confirmButtonColor: '#dc3545',
+    });
+@endif
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 function escapeHtml(str) {
@@ -816,7 +778,6 @@ function sexLabel(sex) {
     return '<span class="text-muted small fst-italic">Not set</span>';
 }
 
-// ── Bootstrap tooltips ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 });
@@ -831,7 +792,7 @@ document.getElementById('applyFilters')?.addEventListener('click', function () {
     window.location.href = '{{ route("flocks.index") }}' + (params.toString() ? '?' + params.toString() : '');
 });
 
-// ── CREATE MODAL: live sellable preview ───────────────────────────────────────
+// ── CREATE: live sellable preview ─────────────────────────────────────────────
 function updateCreateSellablePreview() {
     const initial  = parseInt(document.getElementById('cf_initial')?.value, 10) || 0;
     const breeders = parseInt(document.getElementById('cf_breeders')?.value, 10) || 0;
@@ -848,7 +809,6 @@ function updateCreateSellablePreview() {
         note.className = 'text-muted';
         return;
     }
-
     if (breeders > initial) {
         display.value = '⚠ Breeders exceed initial count';
         display.classList.add('is-invalid');
@@ -858,7 +818,6 @@ function updateCreateSellablePreview() {
         note.className = 'text-danger';
         return;
     }
-
     const sellable    = Math.max(0, initial - breeders);
     const sellablePct = initial > 0 ? ((sellable / initial) * 100).toFixed(0) : 0;
     display.value = sellable.toLocaleString() + ' animals (' + sellablePct + '% of flock)';
@@ -936,7 +895,7 @@ document.querySelectorAll('.view-flock-btn').forEach(btn => {
             const breederPct    = currentCount  > 0 && breederCount  > 0 ? ((breederCount  / currentCount) * 100).toFixed(1) : 0;
             const sellablePct   = currentCount  > 0 && breederCount  > 0 ? ((sellableCount / currentCount) * 100).toFixed(1) : 0;
 
-            const statusCls = { active:'badge bg-success', closed:'badge bg-secondary', quarantined:'badge bg-danger' };
+            const statusCls  = { active:'badge bg-success', closed:'badge bg-secondary', quarantined:'badge bg-danger' };
             const prodLabels = { meat:'Meat', eggs:'Eggs', milk:'Milk', live_sale:'Live Sale', dual_purpose:'Dual Purpose' };
 
             let historyHtml = '';
@@ -946,12 +905,8 @@ document.querySelectorAll('.view-flock-btn').forEach(btn => {
                     <div class="timeline-card ${i===0?'latest':''}">
                         <div class="d-flex justify-content-between align-items-start mb-2">
                             <div>
-                                <span class="count-pill breeder me-1">
-                                    <i class="fas fa-heart"></i> ${fmt(entry.breeder_count)} breeders
-                                </span>
-                                <span class="count-pill sellable">
-                                    <i class="fas fa-tags"></i> ${fmt(entry.sellable_count)} sellable
-                                </span>
+                                <span class="count-pill breeder me-1"><i class="fas fa-heart"></i> ${fmt(entry.breeder_count)} breeders</span>
+                                <span class="count-pill sellable"><i class="fas fa-tags"></i> ${fmt(entry.sellable_count)} sellable</span>
                             </div>
                             ${i===0 ? '<span class="badge px-2 py-1" style="background:#7c3aed;color:#fff;font-size:.7rem;border-radius:8px;">Latest</span>' : ''}
                         </div>
@@ -1006,46 +961,26 @@ document.querySelectorAll('.view-flock-btn').forEach(btn => {
                     <div class="detail-item"><span class="detail-label">Source</span><span class="detail-value">${escapeHtml(f.source || 'N/A')}</span></div>
                     <div class="detail-item"><span class="detail-label">Production Purpose</span><span class="detail-value">${escapeHtml(prodLabels[f.production_type] ?? f.production_type)}</span></div>
                     <div class="detail-item"><span class="detail-label">Status</span><span class="${statusCls[f.status] || 'badge bg-secondary'}">${escapeHtml(f.status)}</span></div>
-                    ${f.parity_number != null ? `<div class="detail-item"><span class="detail-label">Parity # <span style="font-size:.65rem;color:#94a3b8;">(birth cycles)</span></span><span class="detail-value">${escapeHtml(f.parity_number)}</span></div>` : ''}
+                    ${f.parity_number != null ? `<div class="detail-item"><span class="detail-label">Parity #</span><span class="detail-value">${escapeHtml(f.parity_number)}</span></div>` : ''}
                 </div>
             </div>
-
             <div class="detail-section">
                 <h6><i class="fas fa-layer-group me-2 text-primary"></i>Population Breakdown</h6>
                 <div class="pop-strip mb-3">
-                    <div class="pop-chip initial">
-                        <i class="fas fa-database"></i>
-                        <div><span class="pop-label">Initial</span><strong>${fmt(initialCount)}</strong></div>
-                    </div>
+                    <div class="pop-chip initial"><i class="fas fa-database"></i><div><span class="pop-label">Initial</span><strong>${fmt(initialCount)}</strong></div></div>
                     <span class="text-muted px-1">−</span>
-                    <div class="pop-chip lost">
-                        <i class="fas fa-skull-crossbones"></i>
-                        <div><span class="pop-label">Lost (mortality + culls)</span><strong>${fmt(totalLost)}</strong></div>
-                    </div>
+                    <div class="pop-chip lost"><i class="fas fa-skull-crossbones"></i><div><span class="pop-label">Lost</span><strong>${fmt(totalLost)}</strong></div></div>
                     <span class="text-muted px-1">=</span>
-                    <div class="pop-chip current">
-                        <i class="fas fa-circle-check"></i>
-                        <div><span class="pop-label">Current Live</span><strong>${fmt(currentCount)}</strong></div>
-                    </div>
+                    <div class="pop-chip current"><i class="fas fa-circle-check"></i><div><span class="pop-label">Current Live</span><strong>${fmt(currentCount)}</strong></div></div>
                     ${breederCount > 0 ? `
                     <span class="text-muted px-1">→</span>
-                    <div class="pop-chip breeder">
-                        <i class="fas fa-heart"></i>
-                        <div><span class="pop-label">Breeders (${breederPct}%)</span><strong>${fmt(breederCount)}</strong></div>
-                    </div>
-                    <div class="pop-chip sellable">
-                        <i class="fas fa-tags"></i>
-                        <div><span class="pop-label">Sellable (${sellablePct}%)</span><strong>${fmt(sellableCount)}</strong></div>
-                    </div>` : `<span class="text-muted small fst-italic ms-2"><i class="fas fa-circle-info me-1"></i>No breeder split set</span>`}
+                    <div class="pop-chip breeder"><i class="fas fa-heart"></i><div><span class="pop-label">Breeders (${breederPct}%)</span><strong>${fmt(breederCount)}</strong></div></div>
+                    <div class="pop-chip sellable"><i class="fas fa-tags"></i><div><span class="pop-label">Sellable (${sellablePct}%)</span><strong>${fmt(sellableCount)}</strong></div></div>`
+                    : `<span class="text-muted small fst-italic ms-2"><i class="fas fa-circle-info me-1"></i>No breeder split set</span>`}
                 </div>
-                <div class="progress" style="height:12px;border-radius:10px;background:#e2e8f0;">
-                    ${progressBar}
-                </div>
-                <div class="d-flex justify-content-between mt-1 flex-wrap gap-2" style="font-size:.72rem;color:#64748b;">
-                    ${progressLegend}
-                </div>
+                <div class="progress" style="height:12px;border-radius:10px;background:#e2e8f0;">${progressBar}</div>
+                <div class="d-flex justify-content-between mt-1 flex-wrap gap-2" style="font-size:.72rem;color:#64748b;">${progressLegend}</div>
             </div>
-
             <div class="detail-section">
                 <h6><i class="fas fa-chart-line me-2 text-primary"></i>Performance Metrics</h6>
                 <div class="detail-grid">
@@ -1057,9 +992,7 @@ document.querySelectorAll('.view-flock-btn').forEach(btn => {
                     <div class="detail-item"><span class="detail-label">Avg Daily Gain</span><span class="detail-value">${s.avg_daily_gain} kg</span></div>
                 </div>
             </div>
-
             ${historyHtml}
-
             ${f.notes ? `
             <div class="detail-section mb-0">
                 <h6><i class="fas fa-sticky-note me-2 text-primary"></i>Notes</h6>
@@ -1138,11 +1071,11 @@ document.querySelectorAll('.edit-flock-btn').forEach(btn => {
 
 document.getElementById('saveEditFlock')?.addEventListener('click', function () {
     const data = {};
-    new FormData(document.getElementById('editFlockForm')).forEach((v,k) => data[k]=v);
+    new FormData(document.getElementById('editFlockForm')).forEach((v, k) => data[k] = v);
 
     fetch(`/flocks/${window.currentEditFlockId}`, {
-        method:'PUT',
-        headers:{'X-CSRF-TOKEN':CSRF,'Accept':'application/json','Content-Type':'application/json'},
+        method: 'PUT',
+        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     })
     .then(r => r.json())
@@ -1151,8 +1084,11 @@ document.getElementById('saveEditFlock')?.addEventListener('click', function () 
             Swal.fire({ icon:'success', title:'Updated!', text:'Flock updated', timer:1500, showConfirmButton:false })
                 .then(() => window.location.reload());
         } else {
-            Swal.fire({ icon:'error', title:'Error', text:data.message||'Failed' });
+            Swal.fire({ icon:'error', title:'Error', text: data.message || 'Failed' });
         }
+    })
+    .catch(() => {
+        Swal.fire({ icon:'error', title:'Error', text:'Network error while saving.' });
     });
 });
 
@@ -1172,7 +1108,7 @@ document.addEventListener('click', function (e) {
     body.innerHTML = `<div class="text-center py-5"><div class="spinner-border" style="color:#7c3aed;" role="status"></div><p class="mt-2 text-muted">Loading…</p></div>`;
     modal.show();
 
-    fetch(`/flocks/${flockId}/breeders`, { headers:{'Accept':'application/json'} })
+    fetch(`/flocks/${flockId}/breeders`, { headers: { 'Accept': 'application/json' } })
         .then(r => r.json())
         .then(data => {
             if (!data.success) { body.innerHTML = `<div class="alert alert-danger m-3">${escapeHtml(data.message)}</div>`; return; }
@@ -1180,8 +1116,8 @@ document.addEventListener('click', function (e) {
             const liveCount   = data.current_count;
             const latest      = data.breeder_count;
             const sellable    = data.sellable_count;
-            const breederPct  = liveCount > 0 ? ((latest  / liveCount)*100).toFixed(1) : 0;
-            const sellablePct = liveCount > 0 ? ((sellable / liveCount)*100).toFixed(1) : 0;
+            const breederPct  = liveCount > 0 ? ((latest   / liveCount) * 100).toFixed(1) : 0;
+            const sellablePct = liveCount > 0 ? ((sellable / liveCount) * 100).toFixed(1) : 0;
 
             subtitle.textContent = `Flock ${flockNumber} — ${fmt(liveCount)} animals`;
 
@@ -1209,24 +1145,18 @@ document.addEventListener('click', function (e) {
             body.innerHTML = `
             <div class="p-4 border-bottom" style="background:linear-gradient(135deg,#fdf4ff,#f5f3ff);">
                 <div class="row g-3 text-center">
-                    <div class="col-4">
-                        <div class="count-pill total d-block text-center py-3 rounded-3">
-                            <div style="font-size:1.5rem;font-weight:800;">${fmt(liveCount)}</div>
-                            <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Current Flock</div>
-                        </div>
-                    </div>
-                    <div class="col-4">
-                        <div class="count-pill breeder d-block text-center py-3 rounded-3" style="padding:.75rem 1rem;">
-                            <div style="font-size:1.5rem;font-weight:800;">${fmt(latest)}</div>
-                            <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Breeders (${breederPct}%)</div>
-                        </div>
-                    </div>
-                    <div class="col-4">
-                        <div class="count-pill sellable d-block text-center py-3 rounded-3" style="padding:.75rem 1rem;">
-                            <div style="font-size:1.5rem;font-weight:800;">${fmt(sellable)}</div>
-                            <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Sellable (${sellablePct}%)</div>
-                        </div>
-                    </div>
+                    <div class="col-4"><div class="count-pill total d-block text-center py-3 rounded-3">
+                        <div style="font-size:1.5rem;font-weight:800;">${fmt(liveCount)}</div>
+                        <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Current Flock</div>
+                    </div></div>
+                    <div class="col-4"><div class="count-pill breeder d-block text-center py-3 rounded-3" style="padding:.75rem 1rem;">
+                        <div style="font-size:1.5rem;font-weight:800;">${fmt(latest)}</div>
+                        <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Breeders (${breederPct}%)</div>
+                    </div></div>
+                    <div class="col-4"><div class="count-pill sellable d-block text-center py-3 rounded-3" style="padding:.75rem 1rem;">
+                        <div style="font-size:1.5rem;font-weight:800;">${fmt(sellable)}</div>
+                        <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Sellable (${sellablePct}%)</div>
+                    </div></div>
                 </div>
                 ${latest > 0 ? `
                 <div class="mt-3">
@@ -1240,7 +1170,6 @@ document.addEventListener('click', function (e) {
                     </div>
                 </div>` : ''}
             </div>
-
             <div class="p-4 border-bottom">
                 <div class="breeder-form-panel">
                     <h6 class="fw-bold mb-3" style="color:#5b21b6;"><i class="fas fa-sliders me-2"></i>Update Breeder Count</h6>
@@ -1277,7 +1206,6 @@ document.addEventListener('click', function (e) {
                     </div>
                 </div>
             </div>
-
             <div class="p-4">
                 <h6 class="fw-bold mb-4" style="color:#5b21b6;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;">
                     <i class="fas fa-clock-rotate-left me-2"></i>Change History
@@ -1319,8 +1247,8 @@ function saveBreederCount(flockId, currentCount) {
     btn.disabled = true;
 
     fetch(`/flocks/${flockId}/breeders`, {
-        method:'POST',
-        headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json','Accept':'application/json'},
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': CSRF, 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({ breeder_count: count, reason: reason || null })
     })
     .then(r => { if (!r.ok) return r.json().then(d => Promise.reject(d)); return r.json(); })
@@ -1333,14 +1261,14 @@ function saveBreederCount(flockId, currentCount) {
                 timer:2500, showConfirmButton:false, timerProgressBar:true
             }).then(() => window.location.reload());
         } else {
-            Swal.fire({ icon:'error', title:'Error', text:data.message, confirmButtonColor:'#7c3aed' });
+            Swal.fire({ icon:'error', title:'Error', text: data.message, confirmButtonColor:'#7c3aed' });
             btn.querySelector('.submit-text').classList.remove('d-none');
             btn.querySelector('.spinner-border').classList.add('d-none');
             btn.disabled = false;
         }
     })
     .catch(err => {
-        Swal.fire({ icon:'error', title:'Error', text:err?.message||'Something went wrong.', confirmButtonColor:'#7c3aed' });
+        Swal.fire({ icon:'error', title:'Error', text: err?.message || 'Something went wrong.', confirmButtonColor:'#7c3aed' });
         btn.querySelector('.submit-text').classList.remove('d-none');
         btn.querySelector('.spinner-border').classList.add('d-none');
         btn.disabled = false;
@@ -1373,26 +1301,28 @@ document.querySelectorAll('.close-flock-btn').forEach(btn => {
                         <input type="number" id="swal_average_price_per_kg" class="form-control" step="0.01" min="0" placeholder="Price"></div>
                 </div>
             </div>`,
-            showCancelButton:true,
-            confirmButtonText:'<i class="fas fa-check-circle me-2"></i>Close Flock',
-            cancelButtonText:'Cancel',
-            confirmButtonColor:'#28a745',
-            cancelButtonColor:'#6c757d',
-            width:'500px',
-            allowOutsideClick:false,
+            showCancelButton: true,
+            confirmButtonText: '<i class="fas fa-check-circle me-2"></i>Close Flock',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#28a745',
+            cancelButtonColor: '#6c757d',
+            width: '500px',
+            allowOutsideClick: false,
             preConfirm: () => {
                 const endDate    = document.getElementById('swal_end_date').value;
                 const finalCount = document.getElementById('swal_final_count').value;
                 const weight     = document.getElementById('swal_total_weight_kg').value;
                 const price      = document.getElementById('swal_average_price_per_kg').value;
-                if (!endDate)                                            { Swal.showValidationMessage('Select end date'); return false; }
-                if (!finalCount||finalCount<0||finalCount>initialCount) { Swal.showValidationMessage(`Final count must be 0–${initialCount}`); return false; }
-                if (!weight||weight<0)                                   { Swal.showValidationMessage('Enter total weight'); return false; }
-                if (!price||price<0)                                     { Swal.showValidationMessage('Enter price per kg'); return false; }
-                return { endDate, finalCount, totalWeightKg:weight, avgPricePerKg:price };
+                if (!endDate)                                                        { Swal.showValidationMessage('Select end date'); return false; }
+                if (!finalCount || finalCount < 0 || finalCount > initialCount)     { Swal.showValidationMessage(`Final count must be 0–${initialCount}`); return false; }
+                if (!weight || weight < 0)                                           { Swal.showValidationMessage('Enter total weight'); return false; }
+                if (!price || price < 0)                                             { Swal.showValidationMessage('Enter price per kg'); return false; }
+                return { endDate, finalCount, totalWeightKg: weight, avgPricePerKg: price };
             }
         }).then(result => {
             if (!result.isConfirmed) return;
+
+            // Populate hidden form and submit
             document.getElementById('close_end_date').value             = result.value.endDate;
             document.getElementById('close_final_count').value          = result.value.finalCount;
             document.getElementById('close_total_weight_kg').value      = result.value.totalWeightKg;
@@ -1410,17 +1340,24 @@ document.querySelectorAll('.delete-flock-btn').forEach(btn => {
         const id  = this.dataset.id;
         const num = this.dataset.flockNumber;
         Swal.fire({
-            title:'Delete Flock?',
-            html:`Are you sure you want to delete flock <strong>${escapeHtml(num)}</strong>?<br><span class="text-danger">This cannot be undone.</span>`,
-            icon:'warning', showCancelButton:true, confirmButtonColor:'#dc3545', confirmButtonText:'Yes, Delete'
+            title: 'Delete Flock?',
+            html: `Are you sure you want to delete flock <strong>${escapeHtml(num)}</strong>?<br><span class="text-danger">This cannot be undone.</span>`,
+            icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc3545', confirmButtonText: 'Yes, Delete'
         }).then(result => {
             if (!result.isConfirmed) return;
-            fetch(`/flocks/${id}`, { method:'DELETE', headers:{'X-CSRF-TOKEN':CSRF,'Accept':'application/json'} })
+            fetch(`/flocks/${id}`, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' } })
+                .then(async r => {
+                    const d = await r.json();
+                    if (!r.ok) throw new Error(d.message || 'Failed to delete flock.');
+                    return d;
+                })
                 .then(() => {
-                    Swal.fire({ icon:'success', title:'Deleted!', timer:1500, showConfirmButton:false })
+                    Swal.fire({ icon: 'success', title: 'Deleted!', timer: 1500, showConfirmButton: false })
                         .then(() => window.location.reload());
                 })
-                .catch(() => { Swal.fire({ icon:'error', title:'Error', text:'Failed to delete flock.' }); });
+                .catch(err => {
+                    Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+                });
         });
     });
 });

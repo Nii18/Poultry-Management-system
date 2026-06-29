@@ -10,14 +10,16 @@ use Carbon\Carbon;
 class Flock extends Model
 {
     protected $fillable = [
+        // FIX #1: removed 'current_count' — it is a computed accessor, not a stored column.
+        // Writing it to DB was a dead write because the accessor always overrides on read.
         'species_id', 'house_id', 'flock_number', 'breed_variety',
-        'start_date', 'initial_count', 'current_count', 'source',
+        'start_date', 'initial_count', 'source',
         'production_type', 'is_breeding_stock', 'sex', 'parity_number',
         'last_breeding_date', 'expected_delivery_date', 'status',
         'end_date', 'final_count', 'total_weight_kg',
-        'average_price_per_kg', 'total_revenue', 'notes', 'created_by'
+        'average_price_per_kg', 'total_revenue', 'notes', 'created_by',
     ];
-    
+
     protected $casts = [
         'start_date'             => 'date',
         'end_date'               => 'date',
@@ -63,9 +65,21 @@ class Flock extends Model
         return $this->hasMany(HealthRecord::class);
     }
 
+    /**
+     * Breedings where this flock is the DAM (female).
+     */
     public function breedingRecords(): HasMany
     {
-        return $this->hasMany(BreedingRecord::class);
+        return $this->hasMany(BreedingRecord::class, 'flock_id');
+    }
+
+    /**
+     * FIX #3: Breedings where this flock is the SIRE (male).
+     * Previously missing — needed if you ever query "all breedings this male participated in".
+     */
+    public function sireBreedingRecords(): HasMany
+    {
+        return $this->hasMany(BreedingRecord::class, 'mate_id');
     }
 
     public function performanceMetrics(): HasMany
@@ -84,11 +98,14 @@ class Flock extends Model
     }
 
     /**
-     * All breeder count log entries for this flock, newest first.
+     * FIX #2: removed ->latest() from the relationship definition.
+     * Baking a sort order into the relationship prevents clean eager-loading
+     * with additional constraints. Sorting is now done at the call site
+     * (see getBreederCountAttribute below).
      */
     public function breederLogs(): HasMany
     {
-        return $this->hasMany(FlockBreederLog::class)->latest();
+        return $this->hasMany(FlockBreederLog::class);
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
@@ -114,19 +131,20 @@ class Flock extends Model
     public function getTotalMortalityAttribute(): int
     {
         return (int) $this->dailyLogs()
-            ->selectRaw('SUM(mortality_count + culling_count) as total')
+            ->selectRaw('COALESCE(SUM(mortality_count + culling_count), 0) as total')
             ->value('total');
     }
 
     public function getMortalityRateAttribute(): float
     {
-        if ($this->initial_count == 0) return 0;
+        if ($this->initial_count == 0) return 0.0;
         return round(($this->total_mortality / $this->initial_count) * 100, 2);
     }
 
     /**
-     * Live population: initial stock minus every mortality and culling ever recorded.
-     * Floored at zero — can never go negative.
+     * FIX #1 (continued): This accessor is the ONLY source of truth for current_count.
+     * It is computed, never stored. Removed 'current_count' from $fillable to prevent
+     * accidental DB writes that would be silently ignored.
      */
     public function getCurrentCountAttribute(): int
     {
@@ -134,12 +152,13 @@ class Flock extends Model
     }
 
     /**
+     * FIX #2 (continued): explicitly call ->latest() here rather than in the relationship.
      * Animals designated as breeders: taken from the most recent breeder log entry.
      * Returns 0 if no entry has ever been set.
      */
     public function getBreederCountAttribute(): int
     {
-        return (int) ($this->breederLogs()->value('breeder_count') ?? 0);
+        return (int) ($this->breederLogs()->latest()->value('breeder_count') ?? 0);
     }
 
     /**
@@ -164,7 +183,7 @@ class Flock extends Model
             ->latest('log_date')
             ->first();
 
-        if (!$latestLog || $this->age_in_days == 0) return 0;
+        if (!$latestLog || $this->age_in_days == 0) return 0.0;
 
         return round($latestLog->average_weight_kg / $this->age_in_days, 3);
     }
@@ -176,25 +195,25 @@ class Flock extends Model
             ->latest('log_date')
             ->first();
 
-        if (!$latestLog) return 0;
+        if (!$latestLog) return 0.0;
 
         $totalWeightGained = $latestLog->average_weight_kg * $this->current_count;
         $initialWeight     = $this->getInitialWeight();
         $totalWeightGain   = $totalWeightGained - ($initialWeight * $this->initial_count);
 
-        if ($totalWeightGain <= 0) return 0;
+        if ($totalWeightGain <= 0) return 0.0;
 
         return round($this->total_feed_consumed / $totalWeightGain, 2);
     }
 
     protected function getInitialWeight(): float
     {
-        return match($this->species->code ?? '') {
-            'CH' => 0.045,
-            'PG' => 1.5,
-            'CT' => 40.0,
-            'RB' => 0.05,
-            'GT' => 3.0,
+        return match ($this->species->code ?? '') {
+            'CH'    => 0.045,
+            'PG'    => 1.5,
+            'CT'    => 40.0,
+            'RB'    => 0.05,
+            'GT'    => 3.0,
             default => 0.0,
         };
     }
@@ -227,12 +246,12 @@ class Flock extends Model
     }
 
     public function scopeMale($query)
-{
-    return $query->where('sex', 'male');
-}
+    {
+        return $query->where('sex', 'male');
+    }
 
-public function scopeFemale($query)
-{
-    return $query->where('sex', 'female');
-}
+    public function scopeFemale($query)
+    {
+        return $query->where('sex', 'female');
+    }
 }
