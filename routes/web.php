@@ -500,22 +500,12 @@ Route::get('/api/notifications', [NotificationController::class, 'apiNotificatio
 
     
     // Settings - Admin only
-    Route::prefix('settings')->name('settings.')->middleware(['role:admin'])->group(function () {
-        Route::get('/', [SettingsController::class, 'index'])->name('index');
-        Route::post('/general', [SettingsController::class, 'updateGeneral'])->name('update-general');
-        Route::post('/alerts', [SettingsController::class, 'updateAlerts'])->name('update-alerts');
-        Route::post('/clear-cache', [SettingsController::class, 'clearCache'])->name('clear-cache');
-        Route::get('/backup', [SettingsController::class, 'backupDatabase'])->name('backup');
-
-
-        Route::post('/notifications',       [SettingsController::class, 'updateNotifications'])->name('update-notifications');
-        Route::post('/production',          [SettingsController::class, 'updateProduction'])   ->name('update-production');
-        Route::post('/security',            [SettingsController::class, 'updateSecurity'])     ->name('update-security');
-        Route::post('/reporting',           [SettingsController::class, 'updateReporting'])    ->name('update-reporting');
-        Route::post('/integrations',        [SettingsController::class, 'updateIntegrations']) ->name('update-integrations');
-        Route::post('/audit',               [SettingsController::class, 'updateAudit'])        ->name('update-audit');
-        Route::post('/test-email',          [SettingsController::class, 'testEmail'])          ->name('test-email');
-    });
+    Route::get('/settings', [SettingsController::class, 'index'])->name('settings.index');
+    Route::post('/settings/general', [SettingsController::class, 'updateGeneral'])->name('settings.update-general');
+    Route::post('/settings/alerts', [SettingsController::class, 'updateAlerts'])->name('settings.update-alerts');
+    Route::post('/settings/production', [SettingsController::class, 'updateProduction'])->name('settings.update-production');
+    Route::post('/settings/clear-cache', [SettingsController::class, 'clearCache'])->name('settings.clear-cache');
+    Route::get('/settings/backup', [SettingsController::class, 'backupDatabase'])->name('settings.backup');
     
     // Analytics - Admin and Manager only
     Route::prefix('analytics')->name('analytics.')->middleware(['role:admin,manager'])->group(function () {
