@@ -97,7 +97,7 @@ Route::prefix('produces')->name('produces.')->group(function () {
     // Dynamic routes with {id} - place these AFTER static routes
     Route::get('/{id}/details-json', [FarmProduceController::class, 'getDetailsJson'])
         ->name('details-json')
-        ->middleware(['role:admin,manager,accountant']);
+        ->middleware(['role:admin,manager,accountant,worker']);
     
     Route::get('/{id}/edit-data', [FarmProduceController::class, 'getEditData'])
         ->name('edit-data')
@@ -414,8 +414,13 @@ Route::prefix('sales')->name('sales.')->middleware(['role:admin,manager,accounta
     Route::get('/', [SaleController::class, 'index'])->name('index');
     Route::get('/by-product', [SaleController::class, 'byProductType'])->name('by-product');
     Route::delete('/{id}', [SaleController::class, 'destroy'])->name('destroy');
+
+    
 });
     
+// Availability route - outside the prefix group to avoid duplication
+Route::get('/sales/availability', [SaleController::class, 'getAvailability'])->name('sales.availability')
+    ->middleware(['role:admin,manager,accountant']);
     // Reports - Admin, Manager, Accountant, and Veterinarian
     Route::prefix('reports')->name('reports.')->middleware(['role:admin,manager,accountant,veterinarian'])->group(function () {
 

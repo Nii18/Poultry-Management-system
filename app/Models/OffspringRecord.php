@@ -5,9 +5,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
 
 class OffspringRecord extends Model
 {
+    use HasFactory; 
     protected $fillable = [
         'breeding_record_id', 'new_flock_id', 'count',
         'average_birth_weight_kg', 'ear_tag_prefix',

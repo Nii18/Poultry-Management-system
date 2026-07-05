@@ -5,9 +5,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory; 
 
 class DailyLog extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'flock_id', 'log_date', 'mortality_count', 'culling_count',
         'feed_intake_kg', 'water_consumption_liters', 'average_weight_kg',

@@ -5,9 +5,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory; 
 
 class Expense extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'flock_id', 'house_id', 'category', 'description', 'amount',
         'expense_date', 'payment_method', 'receipt_number',

@@ -423,11 +423,11 @@
     .stat-card-icon { width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:12px;font-size:1.5rem; }
     .stat-card-label { font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:#64748b;font-weight:600; }
     .stat-card-value { font-size:1.75rem;font-weight:700;margin:0;line-height:1.2;color:#1e293b; }
-    .bg-primary-soft { background:#e0f2fe; }
-    .bg-success-soft { background:#dcfce7; }
-    .bg-warning-soft { background:#fef3c7; }
-    .bg-info-soft    { background:#d1fae5; }
-    .bg-danger-soft  { background:#fee2e2; }
+    .bg-primary-soft   { background:#e0f2fe; }
+    .bg-success-soft   { background:#dcfce7; }
+    .bg-warning-soft   { background:#fef3c7; }
+    .bg-info-soft      { background:#d1fae5; }
+    .bg-danger-soft    { background:#fee2e2; }
     .bg-secondary-soft { background:#f1f5f9; }
     .text-primary { color:#0d6e4f !important; }
     .text-success { color:#10b981 !important; }
@@ -458,9 +458,8 @@
     .stats-label { font-size:.7rem;text-transform:uppercase;letter-spacing:.5px;color:#64748b;font-weight:600; }
     .offspring-card { background:#f8fafc;border-radius:10px;padding:.75rem;border-left:3px solid #0d6e4f; }
     /* Breeder info box shown in create form */
-    .breeder-info-box { background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem 1rem;font-size:.875rem; }
-    .breeder-info-box.mode-full { background:#eff6ff;border-color:#bfdbfe; }
-    .breeder-info-box.mode-mixed { background:#fefce8;border-color:#fde68a; }
+    .breeder-info-box          { background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem 1rem;font-size:.875rem; }
+    .breeder-info-box.mode-full{ background:#eff6ff;border-color:#bfdbfe; }
 </style>
 @endpush
 
@@ -481,7 +480,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
         document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
         document.body.classList.remove('modal-open');
-        document.body.style.overflow = '';
+        document.body.style.overflow    = '';
         document.body.style.paddingRight = '';
     }
 
@@ -491,14 +490,14 @@ document.addEventListener('DOMContentLoaded', function () {
             instanceRef.current = null;
             document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
             document.body.classList.remove('modal-open');
-            document.body.style.overflow = '';
+            document.body.style.overflow    = '';
             document.body.style.paddingRight = '';
         });
     }
 
     // ── Filters ──────────────────────────────────────────────────────────────
     document.getElementById('applyFilters')?.addEventListener('click', function () {
-        const params = new URLSearchParams();
+        const params  = new URLSearchParams();
         const flockId = document.getElementById('flockFilter').value;
         const status  = document.getElementById('statusFilter').value;
         if (flockId) params.append('flock_id', flockId);
@@ -524,7 +523,10 @@ document.addEventListener('DOMContentLoaded', function () {
         createRef.current.show();
 
         fetch('{{ route("breeding-records.create-form") }}', {
-            headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content, 'Accept': 'application/json' }
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+                'Accept': 'application/json'
+            }
         })
         .then(r => r.json())
         .then(data => {
@@ -541,40 +543,45 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // ── Breeder info box ─────────────────────────────────────────────────────
+    // FIX: reads effective_count and breeder_mode (matching getCreateForm() JSON keys)
+    // FIX: mode comparison uses actual API values ('breeder_subset' / 'whole_flock')
     function buildBreederInfoHtml(flock, sex) {
         if (!flock) return '';
-        const icon   = sex === 'female' ? 'fa-venus text-primary' : 'fa-mars text-info';
-        const count  = flock.effective_breeders;
-        const mode   = flock.population_mode;
+
+        const icon  = sex === 'female' ? 'fa-venus text-primary' : 'fa-mars text-info';
+        const count = flock.effective_count;   // ← was flock.effective_breeders
+        const mode  = flock.breeder_mode;      // ← was flock.population_mode
+
         let boxClass = 'breeder-info-box';
         let label    = '';
 
-        if (mode.includes('Designated')) {
-            boxClass += '';          // green tint (default)
-            label = `<i class="fas fa-check-circle text-success me-1"></i>${escapeHtml(mode)}`;
-        } else if (mode.includes('mixed')) {
-            boxClass += ' mode-mixed';
-            label = `<i class="fas fa-exclamation-triangle text-warning me-1"></i>${escapeHtml(mode)}`;
+        if (mode === 'breeder_subset') {
+            // has a designated breeder subset — green box (default)
+            label = `<i class="fas fa-check-circle text-success me-1"></i>Designated breeders`;
         } else {
+            // whole_flock fallback — blue box
             boxClass += ' mode-full';
-            label = `<i class="fas fa-info-circle text-primary me-1"></i>${escapeHtml(mode)}`;
+            label = `<i class="fas fa-info-circle text-primary me-1"></i>Whole flock (no breeder subset set)`;
         }
 
         return `
             <div class="${boxClass} mt-2">
                 <i class="fas ${icon} me-1"></i>
-                <strong>${count}</strong> animals will be recorded as breeders
+                <strong>${escapeHtml(String(count))}</strong> animals will be recorded as breeders
                 <br><small>${label}</small>
             </div>`;
     }
 
+    // ── Build create form HTML ────────────────────────────────────────────────
+    // FIX: data-effective and data-mode use correct API keys (effective_count / breeder_mode)
     function buildCreateForm(femaleFlocks, maleFlocks) {
-        // Build option HTML, storing effective_breeders and population_mode as data attrs
+
         const femaleOptions = femaleFlocks.map(f =>
             `<option value="${f.id}"
-                data-gestation="${f.gestation_days || 0}"
-                data-effective="${f.effective_breeders}"
-                data-mode="${escapeHtml(f.population_mode)}"
+                data-gestation="${f.gestation_days  || 0}"
+                data-effective="${f.effective_count}"
+                data-mode="${escapeHtml(f.breeder_mode)}"
                 data-current="${f.current_count}"
                 data-breeders="${f.breeder_count}">
                 ${escapeHtml(f.flock_number)} — ${escapeHtml(f.breed_variety)} (${escapeHtml(f.species_name)})
@@ -583,8 +590,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const maleOptions = maleFlocks.map(f =>
             `<option value="${f.id}"
-                data-effective="${f.effective_breeders}"
-                data-mode="${escapeHtml(f.population_mode)}"
+                data-effective="${f.effective_count}"
+                data-mode="${escapeHtml(f.breeder_mode)}"
                 data-current="${f.current_count}"
                 data-breeders="${f.breeder_count}">
                 ${escapeHtml(f.flock_number)} — ${escapeHtml(f.breed_variety)}
@@ -636,48 +643,46 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>
             </form>`;
 
-        // Wire up breeder info display on female select
-        const femaleSelect   = document.getElementById('femaleFlockSelect');
-        const maleSelect     = document.getElementById('maleFlockSelect');
-        const breedingDate   = document.getElementById('breedingDateInput');
-        const expectedDate   = document.getElementById('expectedDeliveryInput');
-        const methodSelect   = document.getElementById('breedingMethodSelect');
+        const femaleSelect = document.getElementById('femaleFlockSelect');
+        const maleSelect   = document.getElementById('maleFlockSelect');
+        const breedingDate = document.getElementById('breedingDateInput');
+        const expectedDate = document.getElementById('expectedDeliveryInput');
+        const methodSelect = document.getElementById('breedingMethodSelect');
+
+        // Read the dataset from the selected option and pass as a plain object
+        // with the keys buildBreederInfoHtml() expects.
+        function flockFromOption(opt) {
+            if (!opt?.value) return null;
+            return {
+                effective_count: opt.dataset.effective,
+                breeder_mode:    opt.dataset.mode,
+                current_count:   opt.dataset.current,
+                breeder_count:   opt.dataset.breeders,
+            };
+        }
 
         function updateFemaleInfo() {
             const opt = femaleSelect.options[femaleSelect.selectedIndex];
             document.getElementById('femaleBreederInfo').innerHTML =
-                opt?.value ? buildBreederInfoHtml({
-                    effective_breeders: opt.dataset.effective,
-                    population_mode:    opt.dataset.mode,
-                    current_count:      opt.dataset.current,
-                    breeder_count:      opt.dataset.breeders,
-                }, 'female') : '';
+                buildBreederInfoHtml(flockFromOption(opt), 'female');
         }
 
         function updateMaleInfo() {
             const opt = maleSelect.options[maleSelect.selectedIndex];
             document.getElementById('maleBreederInfo').innerHTML =
-                opt?.value ? buildBreederInfoHtml({
-                    effective_breeders: opt.dataset.effective,
-                    population_mode:    opt.dataset.mode,
-                    current_count:      opt.dataset.current,
-                    breeder_count:      opt.dataset.breeders,
-                }, 'male') : '';
+                buildBreederInfoHtml(flockFromOption(opt), 'male');
         }
 
         function autoSwitchMethod() {
-            // If male flock cleared, suggest AI
-            if (!maleSelect.value) {
-                methodSelect.value = 'artificial_insemination';
-            } else {
-                methodSelect.value = 'natural';
-            }
+            methodSelect.value = maleSelect.value
+                ? 'natural'
+                : 'artificial_insemination';
         }
 
         function calcExpectedDate() {
-            const opt          = femaleSelect.options[femaleSelect.selectedIndex];
-            const gestation    = parseInt(opt?.dataset.gestation || 0);
-            const dateVal      = breedingDate.value;
+            const opt      = femaleSelect.options[femaleSelect.selectedIndex];
+            const gestation = parseInt(opt?.dataset.gestation || 0);
+            const dateVal   = breedingDate.value;
             if (gestation > 0 && dateVal) {
                 const d = new Date(dateVal);
                 d.setDate(d.getDate() + gestation);
@@ -690,7 +695,7 @@ document.addEventListener('DOMContentLoaded', function () {
         breedingDate.addEventListener('change', calcExpectedDate);
     }
 
-    // Save create form
+    // ── Save create form ─────────────────────────────────────────────────────
     document.getElementById('saveCreateBreeding')?.addEventListener('click', function () {
         const form = document.getElementById('createBreedingForm');
         if (!form) return;
@@ -704,8 +709,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         const btn = this;
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+        btn.disabled    = true;
+        btn.innerHTML   = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
 
         fetch('{{ route("breeding-records.store-ajax") }}', {
             method:  'POST',
@@ -721,21 +726,24 @@ document.addEventListener('DOMContentLoaded', function () {
             if (res.success) {
                 createRef.current?.hide();
                 Swal.fire({
-                    icon: 'success', title: 'Created!',
+                    icon: 'success',
+                    title: 'Created!',
                     html: `Breeding record created.<br>
-                           <small>Female breeders: <strong>${res.female_breeder_count}</strong> &nbsp;|&nbsp;
-                           Male breeders: <strong>${res.male_breeder_count ?? 'AI'}</strong></small>`,
-                    timer: 2500, showConfirmButton: false,
+                           <small>Female breeders: <strong>${res.record.female_breeder_count}</strong>
+                           &nbsp;|&nbsp;
+                           Male breeders: <strong>${res.record.male_breeder_count ?? 'AI'}</strong></small>`,
+                    timer: 2500,
+                    showConfirmButton: false,
                 }).then(() => window.location.reload());
             } else {
                 Swal.fire({ icon: 'error', title: 'Error', text: res.message || 'Failed to create record' });
-                btn.disabled = false;
+                btn.disabled  = false;
                 btn.innerHTML = 'Create Record';
             }
         })
-        .catch(err => {
+        .catch(() => {
             Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred' });
-            btn.disabled = false;
+            btn.disabled  = false;
             btn.innerHTML = 'Create Record';
         });
     });
@@ -763,7 +771,10 @@ document.addEventListener('DOMContentLoaded', function () {
             viewRef.current.show();
 
             fetch(`/breeding-records/${id}/details-json`, {
-                headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content }
+                headers: {
+                    'Accept':        'application/json',
+                    'X-CSRF-TOKEN':  document.querySelector('meta[name="csrf-token"]')?.content,
+                }
             })
             .then(r => r.json())
             .then(data => {
@@ -782,13 +793,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const statusClass = r.is_successful ? 'success' : (r.actual_delivery_date ? 'danger' : 'warning');
         const statusText  = r.is_successful ? 'Successful' : (r.actual_delivery_date ? 'Failed' : 'Pending');
 
-        // Breeder population section
-        const modeLabel = r.population_mode_label ?? 'Full flock';
-        const maleBreederHtml = r.male_breeder_count !== null
-            ? `<span class="badge bg-info-soft text-info ms-2"><i class="fas fa-mars me-1"></i>${r.male_breeder_count} male breeders</span>`
+        const maleBreederHtml = r.male_breeder_count !== null && r.male_breeder_count !== undefined
+            ? `<span class="badge bg-info-soft text-info ms-2">
+                   <i class="fas fa-mars me-1"></i>${r.male_breeder_count} male breeders
+               </span>`
             : `<span class="badge bg-secondary-soft text-secondary ms-2">AI — no male flock</span>`;
 
-        // Delivery analytics (only show after delivery)
         const analyticsExtra = r.actual_delivery_date ? `
             <div class="col-md-4">
                 <div class="stats-card text-center">
@@ -817,7 +827,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <h6><i class="fas fa-paw me-2"></i>Offspring Flocks</h6>
                 <div class="offspring-list">
                     ${r.offspring_records.map(o => `
-                        <div class="offspring-card">
+                        <div class="offspring-card mb-2">
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
                                     <strong>${escapeHtml(o.flock_number)}</strong>
@@ -843,15 +853,11 @@ document.addEventListener('DOMContentLoaded', function () {
                             ${escapeHtml(r.female_breed || '')}
                             ${r.male_flock_number !== 'External / AI' && r.male_breed ? '× ' + escapeHtml(r.male_breed) : ''}
                         </p>
-                        {{-- Breeder population summary --}}
                         <div class="d-flex align-items-center flex-wrap gap-1 mt-1">
                             <span class="badge bg-primary-soft text-primary">
                                 <i class="fas fa-venus me-1"></i>${r.female_breeder_count} female breeders
                             </span>
                             ${maleBreederHtml}
-                            <span class="badge bg-light text-muted border" title="How the breeder count was determined">
-                                <i class="fas fa-info-circle me-1"></i>${escapeHtml(modeLabel)}
-                            </span>
                         </div>
                     </div>
                     <span class="badge bg-${statusClass}-soft text-${statusClass} px-3 py-2 rounded-pill">
@@ -860,7 +866,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>
             </div>
 
-            {{-- Core analytics --}}
             <div class="row g-3 mb-4">
                 <div class="col-md-4">
                     <div class="stats-card text-center">
@@ -889,11 +894,27 @@ document.addEventListener('DOMContentLoaded', function () {
             <div class="detail-section">
                 <h6><i class="fas fa-info-circle me-2"></i>Breeding Information</h6>
                 <div class="detail-grid">
-                    <div class="detail-item"><span class="detail-label">Breeding Date</span><span class="detail-value">${r.breeding_date ?? 'N/A'}</span></div>
-                    <div class="detail-item"><span class="detail-label">Expected Delivery</span><span class="detail-value">${r.expected_delivery_date ?? 'N/A'}</span></div>
-                    ${r.actual_delivery_date ? `<div class="detail-item"><span class="detail-label">Actual Delivery</span><span class="detail-value">${r.actual_delivery_date}</span></div>` : ''}
-                    <div class="detail-item"><span class="detail-label">Breeding Method</span><span class="detail-value">${r.breeding_method ?? 'N/A'}</span></div>
-                    <div class="detail-item"><span class="detail-label">Recorded By</span><span class="detail-value">${escapeHtml(r.recorded_by ?? 'N/A')}</span></div>
+                    <div class="detail-item">
+                        <span class="detail-label">Breeding Date</span>
+                        <span class="detail-value">${r.breeding_date ?? 'N/A'}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Expected Delivery</span>
+                        <span class="detail-value">${r.expected_delivery_date ?? 'N/A'}</span>
+                    </div>
+                    ${r.actual_delivery_date ? `
+                    <div class="detail-item">
+                        <span class="detail-label">Actual Delivery</span>
+                        <span class="detail-value">${r.actual_delivery_date}</span>
+                    </div>` : ''}
+                    <div class="detail-item">
+                        <span class="detail-label">Breeding Method</span>
+                        <span class="detail-value">${escapeHtml(r.breeding_method ?? 'N/A')}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Recorded By</span>
+                        <span class="detail-value">${escapeHtml(r.recorded_by ?? 'N/A')}</span>
+                    </div>
                 </div>
             </div>
 
@@ -901,10 +922,22 @@ document.addEventListener('DOMContentLoaded', function () {
             <div class="detail-section">
                 <h6><i class="fas fa-baby-carriage me-2"></i>Delivery Information</h6>
                 <div class="detail-grid">
-                    <div class="detail-item"><span class="detail-label">Total Offspring</span><span class="detail-value">${r.offspring_count ?? 0}</span></div>
-                    <div class="detail-item"><span class="detail-label">Stillborn</span><span class="detail-value">${r.stillborn_count ?? 0}</span></div>
-                    <div class="detail-item"><span class="detail-label">Live Births</span><span class="detail-value">${(r.offspring_count ?? 0) - (r.stillborn_count ?? 0)}</span></div>
-                    <div class="detail-item"><span class="detail-label">Weaned</span><span class="detail-value">${r.weaned_count ?? 0}</span></div>
+                    <div class="detail-item">
+                        <span class="detail-label">Total Offspring</span>
+                        <span class="detail-value">${r.offspring_count ?? 0}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Stillborn</span>
+                        <span class="detail-value">${r.stillborn_count ?? 0}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Live Births</span>
+                        <span class="detail-value">${(r.offspring_count ?? 0) - (r.stillborn_count ?? 0)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Weaned</span>
+                        <span class="detail-value">${r.weaned_count ?? 0}</span>
+                    </div>
                 </div>
             </div>` : ''}
 
@@ -913,7 +946,7 @@ document.addEventListener('DOMContentLoaded', function () {
             ${r.notes ? `
             <div class="detail-section">
                 <h6><i class="fas fa-pencil-alt me-2"></i>Notes</h6>
-                <p class="mb-0 p-3 bg-light rounded">${escapeHtml(r.notes)}</p>
+                <p class="mb-0 p-3 bg-secondary rounded">${escapeHtml(r.notes)}</p>
             </div>` : ''}
         `;
     }
@@ -921,7 +954,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // ════════════════════════════════════════════════════════════════════════
     // DELIVERY MODAL
     // ════════════════════════════════════════════════════════════════════════
-    const deliveryRef = { current: null };
+    const deliveryRef     = { current: null };
     let currentDeliveryId = null;
     cleanupModal('recordDeliveryModal', deliveryRef);
 
@@ -933,46 +966,52 @@ document.addEventListener('DOMContentLoaded', function () {
             deliveryRef.current = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: true });
             const form = document.getElementById('recordDeliveryForm');
             form.reset();
-            form.querySelector('input[name="actual_delivery_date"]').value = new Date().toISOString().split('T')[0];
+            form.querySelector('input[name="actual_delivery_date"]').value =
+                new Date().toISOString().split('T')[0];
             document.getElementById('deliveryFlockName').innerText = this.dataset.flock;
             deliveryRef.current.show();
         });
     });
 
     document.getElementById('submitDeliveryBtn')?.addEventListener('click', function () {
-        const form      = document.getElementById('recordDeliveryForm');
-        const formData  = new FormData(form);
-        const btn       = this;
-        const origText  = btn.innerHTML;
+        const form     = document.getElementById('recordDeliveryForm');
+        const formData = new FormData(form);
+        const btn      = this;
+        const origText = btn.innerHTML;
 
         if (!form.querySelector('input[name="offspring_count"]').value) {
             Swal.fire({ icon: 'error', title: 'Validation Error', text: 'Please enter offspring count' });
             return;
         }
 
-        btn.disabled = true;
+        btn.disabled  = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
 
         fetch(`/breeding-records/${currentDeliveryId}/record-delivery-ajax`, {
             method:  'POST',
-            headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content, 'Accept': 'application/json' },
-            body:    formData,
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+                'Accept':       'application/json',
+            },
+            body: formData,
         })
         .then(r => r.json())
         .then(res => {
             if (res.success) {
                 deliveryRef.current?.hide();
-                Swal.fire({ icon: 'success', title: 'Success!', text: 'Delivery recorded', timer: 1500, showConfirmButton: false })
-                    .then(() => window.location.reload());
+                Swal.fire({
+                    icon: 'success', title: 'Success!', text: 'Delivery recorded',
+                    timer: 1500, showConfirmButton: false,
+                }).then(() => window.location.reload());
             } else {
                 Swal.fire({ icon: 'error', title: 'Error', text: res.message || 'Failed' });
-                btn.disabled = false;
+                btn.disabled  = false;
                 btn.innerHTML = origText;
             }
         })
         .catch(() => {
             Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred' });
-            btn.disabled = false;
+            btn.disabled  = false;
             btn.innerHTML = origText;
         });
     });
@@ -988,7 +1027,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 title: 'Delete Breeding Record',
                 text:  `Delete record for "${info}"?`,
                 icon:  'warning',
-                showCancelButton: true,
+                showCancelButton:   true,
                 confirmButtonColor: '#dc2626',
                 cancelButtonColor:  '#6c757d',
                 confirmButtonText:  'Yes, delete it!',
@@ -1002,7 +1041,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // Cleanup lingering backdrops on load
+    // Clean up any lingering backdrops on load / back-navigation
     document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
     window.addEventListener('pageshow', () => {
         document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());

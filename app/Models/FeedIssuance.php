@@ -5,9 +5,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory; 
 
 class FeedIssuance extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'flock_id', 'feed_delivery_id', 'quantity_kg',
         'issuance_date', 'issuance_time', 'issued_by', 'notes'

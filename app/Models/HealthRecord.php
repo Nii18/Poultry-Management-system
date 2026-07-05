@@ -5,9 +5,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory; 
 
 class HealthRecord extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'flock_id', 'record_type', 'condition', 'symptoms',
         'lab_results', 'veterinarian_notes', 'affected_count',

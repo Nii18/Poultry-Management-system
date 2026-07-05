@@ -6,9 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Factories\HasFactory; 
 
 class Flock extends Model
 {
+    use HasFactory;
     protected $fillable = [
         // FIX #1: removed 'current_count' — it is a computed accessor, not a stored column.
         // Writing it to DB was a dead write because the accessor always overrides on read.

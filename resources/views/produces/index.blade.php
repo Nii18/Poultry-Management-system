@@ -146,32 +146,32 @@
 @section('content')
 <div class="container-fluid px-4 py-3">
 
-    {{-- ── Page Header ─────────────────────────────────────────── --}}
-    <div class="d-flex flex-wrap align-items-center justify-content-between mb-4">
-        <div>
-            <h1 class="display-6 fw-bold mb-2" style="background:linear-gradient(135deg,#065f46,#059669);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
-                <i class="fas fa-tractor me-2"></i>Farm Produce Records
-            </h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}" class="text-decoration-none">Dashboard</a></li>
-                    <li class="breadcrumb-item active text-muted">Produce Management</li>
-                </ol>
-            </nav>
-        </div>
-        <div class="d-flex gap-2 mt-3 mt-sm-0">
-            @if(in_array(auth()->user()->role ?? '', ['admin','manager','accountant']))
-            <a href="{{ route('produces.inventory') }}" class="btn btn-outline-success btn-lg">
-                <i class="fas fa-chart-line me-2"></i>Inventory Analytics
-            </a>
-            @endif
-            @if(in_array(auth()->user()->role ?? '', ['admin','manager','worker']))
-            <button class="btn btn-success btn-lg shadow-sm" id="newProduceBtn" style="background:var(--primary-gradient);border:none;">
-                <i class="fas fa-plus-circle me-2"></i>New Record
-            </button>
-            @endif
-        </div>
+{{-- ── Page Header ─────────────────────────────────────────── --}}
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4">
+    <div>
+        <h1 class="display-6 fw-bold mb-2" style="background:linear-gradient(135deg,#065f46,#059669);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
+            <i class="fas fa-tractor me-2"></i>Farm Produce Records
+        </h1>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="{{ route('dashboard') }}" class="text-decoration-none">Dashboard</a></li>
+                <li class="breadcrumb-item active text-muted">Produce Management</li>
+            </ol>
+        </nav>
     </div>
+    <div class="d-flex gap-2 mt-3 mt-sm-0">
+        @if(in_array(auth()->user()->role ?? '', ['admin','manager','accountant']))
+        <a href="{{ route('produces.inventory') }}" class="btn btn-outline-success" style="border-radius:8px;padding:0.4rem 1rem;font-size:0.85rem;border-color:#d1d5db;color:#4b5563;">
+            <i class="fas fa-chart-line me-1"></i>Analytics
+        </a>
+        @endif
+        @if(in_array(auth()->user()->role ?? '', ['admin','manager','worker']))
+        <button class="btn btn-success" id="newProduceBtn" style="background:var(--primary-gradient);border:none;border-radius:8px;padding:0.4rem 1rem;font-size:0.85rem;">
+            <i class="fas fa-plus-circle me-1"></i>New Record
+        </button>
+        @endif
+    </div>
+</div>
 
     {{-- ── Monthly Produce Stat Cards ───────────────────────────── --}}
     @php

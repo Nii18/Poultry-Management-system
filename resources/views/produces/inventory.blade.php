@@ -183,27 +183,27 @@
 @section('content')
 <div class="container-fluid px-4 py-3">
 
-    {{-- Modern Header --}}
+    {{-- Modern Header - Resized to match index page --}}
     <div class="d-flex flex-wrap align-items-center justify-content-between mb-4">
         <div>
-            <h1 class="display-6 fw-bold mb-2" style="background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            <h1 class="display-6 fw-bold mb-2" style="background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 2.2rem;">
                 <i class="fas fa-chart-line me-2"></i>Produce Inventory Analytics
             </h1>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
-                    <li class="breadcrumb-item"><a href="{{ route('produces.index') }}">Produce</a></li>
-                    <li class="breadcrumb-item active">Inventory Analytics</li>
+                    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}" class="text-decoration-none">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{{ route('produces.index') }}" class="text-decoration-none">Produce</a></li>
+                    <li class="breadcrumb-item active text-muted">Inventory Analytics</li>
                 </ol>
             </nav>
         </div>
         <div class="d-flex gap-2 mt-3 mt-sm-0">
-            <a href="{{ route('produces.index') }}" class="btn btn-outline-primary btn-lg">
-                <i class="fas fa-table-list me-2"></i>View Records
+            <a href="{{ route('produces.index') }}" class="btn btn-outline-primary" style="border-radius:10px;padding:0.4rem 1.2rem;font-size:0.85rem;border-color:#d1d5db;color:#4b5563;">
+                <i class="fas fa-table-list me-1"></i>View Records
             </a>
             @if(in_array(auth()->user()->role ?? '', ['admin','manager','worker']))
-            <button class="btn btn-primary btn-lg shadow-sm" id="newProduceBtn">
-                <i class="fas fa-plus-circle me-2"></i>Quick Record
+            <button class="btn btn-primary" id="newProduceBtn" style="background:linear-gradient(135deg, #667eea, #764ba2);border:none;border-radius:10px;padding:0.4rem 1.2rem;font-size:0.85rem;">
+                <i class="fas fa-plus-circle me-1"></i>Quick Record
             </button>
             @endif
         </div>
@@ -214,10 +214,10 @@
         <div class="card-body p-4">
             <form method="GET" action="{{ route('produces.inventory') }}" class="row g-3 align-items-end">
                 <div class="col-md-5">
-                    <label class="form-label fw-semibold mb-2">
+                    <label class="form-label fw-semibold mb-2" style="font-size:0.85rem;">
                         <i class="fas fa-people-arrows me-2"></i>Filter by Flock
                     </label>
-                    <select name="flock_id" class="form-select form-select-lg" style="border-radius: 12px;">
+                    <select name="flock_id" class="form-select" style="border-radius: 12px; padding: 0.5rem 0.75rem; font-size:0.9rem;">
                         <option value="">All Flocks</option>
                         @foreach($flocks as $flock)
                             <option value="{{ $flock->id }}" {{ $flockId == $flock->id ? 'selected' : '' }}>
@@ -227,10 +227,10 @@
                     </select>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label fw-semibold mb-2">
+                    <label class="form-label fw-semibold mb-2" style="font-size:0.85rem;">
                         <i class="fas fa-calendar-alt me-2"></i>Analysis Year
                     </label>
-                    <select name="year" class="form-select form-select-lg" style="border-radius: 12px;">
+                    <select name="year" class="form-select" style="border-radius: 12px; padding: 0.5rem 0.75rem; font-size:0.9rem;">
                         @foreach($years as $y)
                             <option value="{{ $y }}" {{ $year == $y ? 'selected' : '' }}>{{ $y }}</option>
                         @endforeach
@@ -238,10 +238,10 @@
                 </div>
                 <div class="col-md-3">
                     <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary btn-lg px-4" style="border-radius: 12px;">
+                        <button type="submit" class="btn btn-primary px-4 py-2" style="border-radius: 10px; font-size:0.85rem; background:linear-gradient(135deg, #667eea, #764ba2); border:none;">
                             <i class="fas fa-chart-line me-2"></i>Analyze
                         </button>
-                        <a href="{{ route('produces.inventory') }}" class="btn btn-outline-secondary btn-lg px-4" style="border-radius: 12px;">
+                        <a href="{{ route('produces.inventory') }}" class="btn btn-outline-secondary px-4 py-2" style="border-radius: 10px; font-size:0.85rem; border-color:#d1d5db; color:#4b5563;">
                             <i class="fas fa-undo-alt me-2"></i>Reset
                         </a>
                     </div>

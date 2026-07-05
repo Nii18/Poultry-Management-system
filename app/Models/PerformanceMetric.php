@@ -5,9 +5,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory; 
 
 class PerformanceMetric extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'flock_id', 'mortality_rate', 'feed_conversion_ratio',
         'average_daily_gain_kg', 'total_feed_consumed_kg',

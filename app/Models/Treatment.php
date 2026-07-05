@@ -6,9 +6,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Factories\HasFactory; 
 
 class Treatment extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'flock_id', 'diagnosis', 'product_name', 'active_ingredient',
         'dosage', 'administration_route', 'start_date', 'end_date',

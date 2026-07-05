@@ -144,6 +144,8 @@
                                             'eggs_tray' => 'Eggs (Tray - 30 eggs)',
                                             'eggs_crate' => 'Eggs (Crate - 12 trays)',
                                             'eggs_box' => 'Eggs (Box - 360 eggs)',
+                                            'eggs' => 'Eggs',
+                                            'milk' => 'Milk',
                                             'live_bird' => 'Live Bird',
                                             'meat_kg' => 'Meat (kg)',
                                             'breeding_stock' => 'Breeding Stock',
@@ -203,6 +205,8 @@
                                         'eggs_tray' => ['label' => '🥚 Eggs (Tray)', 'color' => 'warning'],
                                         'eggs_crate' => ['label' => '📦 Eggs (Crate)', 'color' => 'warning'],
                                         'eggs_box' => ['label' => '📦 Eggs (Box)', 'color' => 'warning'],
+                                        'eggs' => ['label' => '🥚 Eggs', 'color' => 'warning'],
+                                        'milk' => ['label' => '🥛 Milk', 'color' => 'info'],
                                         'live_bird' => ['label' => '🐓 Live Bird', 'color' => 'primary'],
                                         'meat_kg' => ['label' => '🍗 Meat (kg)', 'color' => 'danger'],
                                         'breeding_stock' => ['label' => '🧬 Breeding Stock', 'color' => 'info'],
@@ -343,6 +347,8 @@
                             'eggs_tray'      => ['icon'=>'🥚','label'=>'Eggs (Tray)'],
                             'eggs_crate'     => ['icon'=>'📦','label'=>'Eggs (Crate)'],
                             'eggs_box'       => ['icon'=>'📦','label'=>'Eggs (Box)'],
+                            'eggs'           => ['icon'=>'🥚','label'=>'Eggs'],
+                            'milk'           => ['icon'=>'🥛','label'=>'Milk'],
                             'live_bird'      => ['icon'=>'🐓','label'=>'Live Bird'],
                             'meat_kg'        => ['icon'=>'🍗','label'=>'Meat (kg)'],
                             'breeding_stock' => ['icon'=>'🧬','label'=>'Breeding Stock'],
@@ -454,12 +460,12 @@
                     <h6 class="stat-section-title mb-3"><i class="fas fa-layer-group me-2 text-primary"></i>Qty Sold per Product &amp; Stock Status</h6>
                     @php
                         $qtyByProduct = $sales->getCollection()->groupBy('product_type');
-                        // Unit label per sale type (purely cosmetic, no capacity guessing here)
                         $unitLabels = [
                             'eggs_tray'      => 'trays',
                             'eggs_crate'     => 'crates',
                             'eggs_box'       => 'boxes',
-                            'eggs'           => 'eggs',
+                            'eggs'           => 'pieces',
+                            'milk'           => 'litres',
                             'live_bird'      => 'birds',
                             'meat_kg'        => 'kg',
                             'meat'           => 'kg',
@@ -467,9 +473,6 @@
                             'manure'         => 'bags',
                             'other'          => 'units',
                         ];
-                        // $saleAvailability comes from the controller — real remaining
-                        // stock per sale type, derived from FarmProduce records via
-                        // the same logic used to validate new sales (no guessing).
                     @endphp
                     <div class="table-responsive">
                         <table class="table table-hover align-middle stat-table">
@@ -492,12 +495,8 @@
                                         $avg  = $group->avg('quantity');
                                         $max  = $group->max('quantity');
 
-                                        // Real remaining stock, in this sale type's own units,
-                                        // straight from FarmProduce-backed availability.
                                         $remaining   = $saleAvailability[$type] ?? null;
                                         $hasRealData = $remaining !== null;
-                                        // Use sold + remaining as the "capacity" baseline for the
-                                        // progress bar so it reflects produced stock, not a guess.
                                         $capacity = $hasRealData ? ($sold + $remaining) : null;
                                         $pctUsed  = ($capacity && $capacity > 0) ? min(($sold / $capacity) * 100, 100) : null;
                                     @endphp
@@ -721,7 +720,7 @@
                             <div class="stat-mini-card stat-mini-blue">
                                 <div class="stat-mini-label">Unused Types</div>
                                 @php
-                                    $allTypes = ['eggs_tray','eggs_crate','eggs_box','live_bird','meat_kg','breeding_stock','manure','other'];
+                                    $allTypes = ['eggs','live_bird','meat_kg','breeding_stock','manure','milk','other'];
                                     $unusedTypes = array_diff($allTypes, $productTypes->toArray());
                                 @endphp
                                 <div class="stat-mini-value">{{ count($unusedTypes) }}</div>
@@ -737,6 +736,8 @@
                             'eggs_tray'      => ['icon'=>'🥚','label'=>'Eggs (Tray)',     'desc'=>'30 eggs per tray','unit'=>'trays'],
                             'eggs_crate'     => ['icon'=>'📦','label'=>'Eggs (Crate)',    'desc'=>'12 trays / 360 eggs','unit'=>'crates'],
                             'eggs_box'       => ['icon'=>'📦','label'=>'Eggs (Box)',       'desc'=>'360 eggs per box','unit'=>'boxes'],
+                            'eggs'           => ['icon'=>'🥚','label'=>'Eggs',             'desc'=>'Sold per egg','unit'=>'pieces'],
+                            'milk'           => ['icon'=>'🥛','label'=>'Milk',             'desc'=>'Sold per litre','unit'=>'litres'],
                             'live_bird'      => ['icon'=>'🐓','label'=>'Live Bird',        'desc'=>'Per bird, live sale','unit'=>'birds'],
                             'meat_kg'        => ['icon'=>'🍗','label'=>'Meat (kg)',        'desc'=>'Dressed/processed meat','unit'=>'kg'],
                             'breeding_stock' => ['icon'=>'🧬','label'=>'Breeding Stock',  'desc'=>'Breeder animals sold','unit'=>'animals'],
@@ -765,8 +766,6 @@
                                         $rev  = $grp->sum('total_amount');
                                         $qty  = $grp->sum('quantity');
                                         $txs  = $grp->count();
-                                        // Real remaining stock for this sale type, from FarmProduce-backed
-                                        // availability (same source as the Quantity modal & stock checks).
                                         $remaining = $saleAvailability[$type] ?? null;
                                     @endphp
                                     <tr>
@@ -825,7 +824,7 @@
 
 
 {{-- ═══════════════════════════════════════════════════════════
-     EXISTING CRUD MODALS (unchanged)
+     CREATE SALE MODAL
 ═══════════════════════════════════════════════════════════ --}}
 
 <!-- Create Sale Modal -->
@@ -852,6 +851,10 @@
     </div>
 </div>
 
+{{-- ═══════════════════════════════════════════════════════════
+     VIEW SALE MODAL
+═══════════════════════════════════════════════════════════ --}}
+
 <!-- View Sale Modal -->
 <div class="modal fade" id="viewSaleModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-lg">
@@ -874,6 +877,10 @@
         </div>
     </div>
 </div>
+
+{{-- ═══════════════════════════════════════════════════════════
+     EDIT SALE MODAL
+═══════════════════════════════════════════════════════════ --}}
 
 <!-- Edit Sale Modal -->
 <div class="modal fade" id="editSaleModal" tabindex="-1" data-bs-backdrop="static">
@@ -999,16 +1006,6 @@
     .stat-section-title { font-size: .82rem; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; color: #64748b; }
     .progress { background-color: #e2e8f0; border-radius: 10px; }
 
-    /*
-     * ── Stat modal table text visibility fix ──
-     * The stat-card detail modals (Revenue/Quantity/Transactions/Products)
-     * render plain text inside <td>/<span>/<div> elements that don't match
-     * the broader ".modal-body p" / ".form-label" override below, so they
-     * were inheriting a light/white color from elsewhere in the theme and
-     * becoming unreadable on the white table background. These two classes
-     * give every value cell in those modals an explicit, theme-proof color
-     * so visibility no longer depends on inheritance.
-     */
     .stat-table td,
     .stat-table th { color: #1e293b; }
     .stat-cell-text { color: #1e293b !important; }
@@ -1020,6 +1017,34 @@
     .modal-body .bg-light { background-color:#f1f5f9 !important; }
     .form-control, .form-select { background-color:#ffffff !important;color:#1e293b !important; }
     .form-control::placeholder { color:#94a3b8 !important; }
+
+    /* Stock availability display */
+    #availableStockDisplay, #editAvailableStockDisplay {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 10px 12px;
+        min-height: 50px;
+        background: #f8fafc;
+    }
+
+    #availableStockDisplay .badge,
+    #editAvailableStockDisplay .badge {
+        font-size: 0.9rem;
+        padding: 6px 12px;
+    }
+
+    .stock-warning {
+        border-left: 4px solid #f59e0b;
+        background: #fffbeb;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-top: 10px;
+    }
+
+    .stock-warning.danger {
+        border-left-color: #dc2626;
+        background: #fef2f2;
+    }
 </style>
 @endpush
 
@@ -1077,8 +1102,49 @@ document.addEventListener('DOMContentLoaded', function () {
         return String(str).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m] || m));
     }
 
+    /* ── Stock Availability Checker ──
+       Hits the sales.availability endpoint (flock + product scoped).
+       This is a UI convenience only — the real, enforced check happens
+       server-side in checkStockAvailability() when the form is submitted,
+       so an over-sell is always blocked even if this call fails. */
+    function checkStockAvailability(flockId, productType, quantity, excludeSaleId = null) {
+        return new Promise((resolve, reject) => {
+            if (!flockId || !productType) {
+                resolve({ available: null, unit: null, label: null, has_stock: false, message: 'Select both flock and product' });
+                return;
+            }
+
+            const url = new URL('{{ route("sales.availability") }}', window.location.origin);
+            url.searchParams.append('flock_id', flockId);
+            url.searchParams.append('product_type', productType);
+            if (excludeSaleId) {
+                url.searchParams.append('exclude_sale_id', excludeSaleId);
+            }
+
+            fetch(url, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
+                }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    resolve(data);
+                } else {
+                    resolve({ available: 0, unit: 'units', label: productType, has_stock: false, message: data.message || 'Error checking stock' });
+                }
+            })
+            .catch(error => {
+                console.error('Stock check error:', error);
+                resolve({ available: 0, unit: 'units', label: productType, has_stock: false, message: 'Error checking stock' });
+            });
+        });
+    }
+
     /* ── Create Sale ── */
     let createModal = null;
+    let currentCreateExcludeId = null;
 
     function openCreateSaleModal() {
         closeAllModals();
@@ -1087,16 +1153,22 @@ document.addEventListener('DOMContentLoaded', function () {
             createModal = new bootstrap.Modal(el, { backdrop: 'static', keyboard: false });
             document.getElementById('createSaleContent').innerHTML = `<div class="text-center py-4"><div class="spinner-border text-success" role="status"></div><p class="mt-2">Loading form...</p></div>`;
             createModal.show();
+            currentCreateExcludeId = null;
 
             fetch('{{ route("sales.create-form") }}', {
                 headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content, 'Accept': 'application/json' }
             })
             .then(r => r.json())
             .then(data => {
-                if (data.success) displaySaleCreateForm(data.flocks, data.productTypes || []);
-                else document.getElementById('createSaleContent').innerHTML = `<div class="alert alert-danger m-3">Failed: ${data.message}</div>`;
+                if (data.success) {
+                    displaySaleCreateForm(data.flocks, data.productTypes || []);
+                } else {
+                    document.getElementById('createSaleContent').innerHTML = `<div class="alert alert-danger m-3">Failed: ${data.message}</div>`;
+                }
             })
-            .catch(e => { document.getElementById('createSaleContent').innerHTML = `<div class="alert alert-danger m-3">Error: ${e.message}</div>`; });
+            .catch(e => { 
+                document.getElementById('createSaleContent').innerHTML = `<div class="alert alert-danger m-3">Error: ${e.message}</div>`; 
+            });
         }, 350);
     }
 
@@ -1108,68 +1180,233 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     function displaySaleCreateForm(flocks, productTypes) {
-    const fo = flocks.map(f =>
-        `<option value="${f.id}">${escapeHtml(f.flock_number)} - ${escapeHtml(f.breed_variety)}</option>`
-    ).join('');
+        const fo = flocks.map(f =>
+            `<option value="${f.id}">${escapeHtml(f.flock_number)} - ${escapeHtml(f.breed_variety)}</option>`
+        ).join('');
 
-    // Build options from dynamic produce types
-    const ptOpts = productTypes.length > 0
-        ? productTypes.map(type => {
-            const label = type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
-            return `<option value="${type}">${label}</option>`;
-          }).join('')
-        : `<option value="" disabled>No produce types recorded yet — record produce first</option>`;
+        const ptOpts = productTypes.length > 0
+            ? productTypes.map(pt => {
+                const stockNote = pt.available !== null && pt.available !== undefined
+                    ? ` — ${Number(pt.available).toFixed(2)} ${pt.unit} available`
+                    : '';
+                return `<option value="${pt.value}">${escapeHtml(pt.label)}${stockNote}</option>`;
+              }).join('')
+            : `<option value="" disabled>No produce types recorded yet — record produce first</option>`;
 
-    document.getElementById('createSaleContent').innerHTML = `
-        <form id="createSaleForm"><div class="row">
-            <div class="col-md-6 mb-3">
-                <label class="form-label fw-semibold">Product Type <span class="text-danger">*</span></label>
-                <select name="product_type" class="form-select" required>
-                    <option value="">Select Product</option>
-                    ${ptOpts}
-                </select>
-                <small class="text-muted">
-                    <i class="fas fa-info-circle me-1"></i>
-                    Only products recorded in Produce Inventory appear here.
-                    <a href="{{ route("produces.index") }}" target="_blank">Add a new product type →</a>
-                </small>
+        document.getElementById('createSaleContent').innerHTML = `
+            <form id="createSaleForm">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Product Type <span class="text-danger">*</span></label>
+                        <select name="product_type" id="createProductType" class="form-select" required>
+                            <option value="">Select Product</option>
+                            ${ptOpts}
+                        </select>
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Only products recorded in Produce Inventory appear here.
+                            <a href="{{ route("produces.index") }}" target="_blank">Add a new product type →</a>
+                        </small>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Sale Date <span class="text-danger">*</span></label>
+                        <input type="date" name="sale_date" class="form-control" value="${new Date().toISOString().split('T')[0]}" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Associated Flock</label>
+                        <select name="flock_id" id="createFlockId" class="form-select">
+                            <option value="">None - General Sale</option>
+                            ${fo}
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div id="availableStockDisplay">
+                            <span class="text-muted">Select a flock and product to check availability</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-semibold">Quantity <span class="text-danger">*</span></label>
+                        <input type="number" name="quantity" id="createQuantity" class="form-control" step="0.01" min="0.01" placeholder="Quantity" required>
+                        <div id="createQuantityFeedback" class="small mt-1"></div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-semibold">Unit Price (₵) <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text">₵</span>
+                            <input type="number" name="unit_price" id="createUnitPrice" class="form-control" step="0.01" min="0.01" placeholder="0.00" required>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-semibold">Total Amount (₵)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">₵</span>
+                            <input type="number" name="total_amount" id="createTotalAmount" class="form-control" step="0.01" readonly style="background:#f8fafc;">
+                        </div>
+                        <small class="text-muted">Auto-calculated</small>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Customer Name</label>
+                        <input type="text" name="customer_name" class="form-control" placeholder="Customer name">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Payment Method</label>
+                        <select name="payment_method" class="form-select">
+                            <option value="">Select Payment Method</option>
+                            <option value="cash">💵 Cash</option>
+                            <option value="bank_transfer">🏦 Bank Transfer</option>
+                            <option value="mobile_money">📱 Mobile Money (MoMo)</option>
+                            <option value="check">📝 Cheque</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Receipt Number</label>
+                        <input type="text" class="form-control" value="Auto-generated on save" readonly style="background:#f8fafc;">
+                        <small class="text-muted">Assigned automatically once the sale is recorded (e.g. SALE-000123)</small>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-semibold">Description</label>
+                        <input type="text" name="description" class="form-control" placeholder="Brief description">
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-semibold">Notes</label>
+                        <textarea name="notes" class="form-control" rows="2" placeholder="Additional notes..."></textarea>
+                    </div>
+                </div>
+            </form>
+            <div id="createStockWarning" class="stock-warning d-none">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <span id="createStockWarningText"></span>
             </div>
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Sale Date <span class="text-danger">*</span></label>
-                    <input type="date" name="sale_date" class="form-control" value="${new Date().toISOString().split('T')[0]}" required></div>
-                <div class="col-md-4 mb-3"><label class="form-label fw-semibold">Quantity <span class="text-danger">*</span></label>
-                    <input type="number" name="quantity" id="quantityInput" class="form-control" step="0.01" min="0.01" placeholder="Quantity" required></div>
-                <div class="col-md-4 mb-3"><label class="form-label fw-semibold">Unit Price (₵) <span class="text-danger">*</span></label>
-                    <div class="input-group"><span class="input-group-text">₵</span>
-                    <input type="number" name="unit_price" id="unitPriceInput" class="form-control" step="0.01" min="0.01" placeholder="0.00" required></div></div>
-                <div class="col-md-4 mb-3"><label class="form-label fw-semibold">Total Amount (₵)</label>
-                    <div class="input-group"><span class="input-group-text">₵</span>
-                    <input type="number" name="total_amount" id="totalAmountInput" class="form-control" step="0.01" readonly style="background:#f8fafc;"></div>
-                    <small class="text-muted">Auto-calculated</small></div>
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Customer Name</label>
-                    <input type="text" name="customer_name" class="form-control" placeholder="Customer name"></div>
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Payment Method</label>
-                    <select name="payment_method" class="form-select">
-                        <option value="">Select Payment Method</option>
-                        <option value="cash">💵 Cash</option>
-                        <option value="bank_transfer">🏦 Bank Transfer</option>
-                        <option value="mobile_money">📱 Mobile Money (MoMo)</option>
-                        <option value="check">📝 Cheque</option>
-                    </select></div>
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Receipt Number</label>
-                    <input type="text" name="receipt_number" class="form-control" placeholder="Receipt/invoice number"></div>
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Associated Flock</label>
-                    <select name="flock_id" class="form-select"><option value="">None - General Sale</option>${fo}</select></div>
-                <div class="col-12 mb-3"><label class="form-label fw-semibold">Description</label>
-                    <input type="text" name="description" class="form-control" placeholder="Brief description"></div>
-                <div class="col-12 mb-3"><label class="form-label fw-semibold">Notes</label>
-                    <textarea name="notes" class="form-control" rows="2" placeholder="Additional notes..."></textarea></div>
-            </div></form>`;
+        `;
 
-        const qi = document.getElementById('quantityInput');
-        const upi = document.getElementById('unitPriceInput');
-        const tai = document.getElementById('totalAmountInput');
-        const calc = () => { tai.value = ((parseFloat(qi.value)||0) * (parseFloat(upi.value)||0)).toFixed(2); };
-        qi.addEventListener('input', calc); upi.addEventListener('input', calc);
+        // ── Event Listeners for Real-time Stock Check ──
+        const productTypeSelect = document.getElementById('createProductType');
+        const flockSelect = document.getElementById('createFlockId');
+        const quantityInput = document.getElementById('createQuantity');
+        const unitPriceInput = document.getElementById('createUnitPrice');
+        const totalAmountInput = document.getElementById('createTotalAmount');
+        const stockDisplay = document.getElementById('availableStockDisplay');
+        const quantityFeedback = document.getElementById('createQuantityFeedback');
+        const stockWarning = document.getElementById('createStockWarning');
+        const stockWarningText = document.getElementById('createStockWarningText');
+
+        // Auto-calculate total
+        function calculateTotal() {
+            const qty = parseFloat(quantityInput.value) || 0;
+            const price = parseFloat(unitPriceInput.value) || 0;
+            totalAmountInput.value = (qty * price).toFixed(2);
+            validateQuantityAgainstStock();
+        }
+
+        // Validate quantity against available stock
+        function validateQuantityAgainstStock() {
+            const qty = parseFloat(quantityInput.value) || 0;
+            const available = parseFloat(stockDisplay.dataset.available) || 0;
+            const unit = stockDisplay.dataset.unit || 'units';
+            const saveBtn = document.getElementById('saveCreateSale');
+
+            if (qty <= 0) {
+                quantityFeedback.innerHTML = '';
+                if (saveBtn) saveBtn.disabled = false;
+                stockWarning.classList.add('d-none');
+                return;
+            }
+
+            if (available > 0 && qty > available) {
+                quantityFeedback.innerHTML = `<span class="text-danger">⚠️ Quantity (${qty.toFixed(2)}) exceeds available stock (${available.toFixed(2)} ${unit})</span>`;
+                if (saveBtn) saveBtn.disabled = true;
+                stockWarning.classList.remove('d-none');
+                stockWarning.classList.add('danger');
+                stockWarningText.textContent = `You are trying to sell ${qty.toFixed(2)} ${unit} but only ${available.toFixed(2)} ${unit} is available for this flock.`;
+            } else if (available <= 0 && qty > 0) {
+                quantityFeedback.innerHTML = `<span class="text-danger">⚠️ No stock available for this product/flock combination</span>`;
+                if (saveBtn) saveBtn.disabled = true;
+                stockWarning.classList.remove('d-none');
+                stockWarning.classList.add('danger');
+                stockWarningText.textContent = `No stock available for this product. Please record produce first.`;
+            } else {
+                quantityFeedback.innerHTML = '';
+                if (saveBtn) saveBtn.disabled = false;
+                stockWarning.classList.add('d-none');
+                stockWarning.classList.remove('danger');
+            }
+        }
+
+        // Check stock when flock or product changes
+        async function checkStock() {
+            const flockId = flockSelect.value;
+            const productType = productTypeSelect.value;
+            const excludeId = currentCreateExcludeId;
+
+            if (!flockId || !productType) {
+                stockDisplay.innerHTML = '<span class="text-muted">Select both a flock and product to check availability</span>';
+                stockDisplay.dataset.available = '0';
+                stockDisplay.dataset.unit = 'units';
+                quantityFeedback.innerHTML = '';
+                stockWarning.classList.add('d-none');
+                document.getElementById('saveCreateSale').disabled = false;
+                return;
+            }
+
+            // Show loading
+            stockDisplay.innerHTML = '<span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Checking stock...</span>';
+
+            try {
+                const data = await checkStockAvailability(flockId, productType, parseFloat(quantityInput.value) || 0, excludeId);
+                
+                const available = data.available || 0;
+                const unit = data.unit || 'units';
+                const label = data.label || productType;
+
+                stockDisplay.dataset.available = available;
+                stockDisplay.dataset.unit = unit;
+
+                let html = '';
+                if (available > 0) {
+                    html = `
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-success">${available.toFixed(2)} ${unit} available</span>
+                            <small class="text-muted">${label}</small>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Stock available for this flock
+                        </div>
+                    `;
+                } else {
+                    html = `
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-danger">No stock available</span>
+                            <small class="text-muted">${label}</small>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Record produce for this flock first
+                        </div>
+                    `;
+                }
+                stockDisplay.innerHTML = html;
+                validateQuantityAgainstStock();
+
+            } catch (error) {
+                stockDisplay.innerHTML = `<span class="text-danger">Error checking stock</span>`;
+                console.error(error);
+            }
+        }
+
+        // Attach event listeners
+        productTypeSelect.addEventListener('change', checkStock);
+        flockSelect.addEventListener('change', checkStock);
+        quantityInput.addEventListener('input', function() {
+            calculateTotal();
+            validateQuantityAgainstStock();
+        });
+        unitPriceInput.addEventListener('input', calculateTotal);
+
+        // Initial check if both are selected
+        if (productTypeSelect.value && flockSelect.value) {
+            checkStock();
+        }
     }
 
     document.getElementById('saveCreateSale')?.addEventListener('click', function () {
@@ -1180,20 +1417,48 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!data.total_amount || data.total_amount == 0)
             data.total_amount = ((parseFloat(data.quantity)||0)*(parseFloat(data.unit_price)||0)).toFixed(2);
         if (!data.product_type || !data.sale_date || !data.quantity || !data.unit_price) {
-            Swal.fire({ icon: 'error', title: 'Validation Error', text: 'Please fill in all required fields' }); return;
+            Swal.fire({ icon: 'error', title: 'Validation Error', text: 'Please fill in all required fields' });
+            return;
         }
-        const btn = this; btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+        const btn = this; 
+        btn.disabled = true; 
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+        
         fetch('{{ route("sales.store-ajax") }}', {
             method: 'POST',
-            headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            headers: { 
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content, 
+                'Accept': 'application/json', 
+                'Content-Type': 'application/json' 
+            },
             body: JSON.stringify(data)
         })
         .then(r => r.json())
         .then(data => {
-            if (data.success) { createModal?.hide(); Swal.fire({ icon:'success', title:'Recorded!', text:'Sale recorded successfully', timer:1500, showConfirmButton:false }).then(()=>window.location.reload()); }
-            else { Swal.fire({ icon:'error', title:'Error', text:data.message||'Failed to record sale' }); btn.disabled=false; btn.innerHTML='Record Sale'; }
+            if (data.success) { 
+                createModal?.hide(); 
+                Swal.fire({ 
+                    icon:'success', 
+                    title:'Recorded!', 
+                    text:`Sale recorded successfully. Receipt: ${data.receipt_number || ''}`, 
+                    timer:1800, 
+                    showConfirmButton:false 
+                }).then(() => window.location.reload()); 
+            } else { 
+                Swal.fire({ 
+                    icon:'error', 
+                    title:'Error', 
+                    text:data.message || 'Failed to record sale' 
+                }); 
+                btn.disabled=false; 
+                btn.innerHTML='Record Sale'; 
+            }
         })
-        .catch(e => { Swal.fire({ icon:'error', title:'Error', text:'An error occurred' }); btn.disabled=false; btn.innerHTML='Record Sale'; });
+        .catch(e => { 
+            Swal.fire({ icon:'error', title:'Error', text:'An error occurred' }); 
+            btn.disabled=false; 
+            btn.innerHTML='Record Sale'; 
+        });
     });
 
     document.getElementById('newSaleBtn')?.addEventListener('click', openCreateSaleModal);
@@ -1210,10 +1475,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 viewModal = new bootstrap.Modal(el, { backdrop:'static', keyboard:true });
                 document.getElementById('viewSaleContent').innerHTML = `<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Loading...</p></div>`;
                 viewModal.show();
-                fetch(`/sales/${id}/details-json`, { headers:{ 'Accept':'application/json','X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]')?.content } })
+                fetch(`/sales/${id}/details-json`, { 
+                    headers:{ 
+                        'Accept':'application/json',
+                        'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]')?.content 
+                    } 
+                })
                 .then(r=>r.json())
-                .then(data=>{ if(data.success) displaySaleDetails(data.sale); else document.getElementById('viewSaleContent').innerHTML=`<div class="alert alert-danger m-3">Failed: ${data.message}</div>`; })
-                .catch(e=>{ document.getElementById('viewSaleContent').innerHTML=`<div class="alert alert-danger m-3">Error: ${e.message}</div>`; });
+                .then(data=>{ 
+                    if(data.success) displaySaleDetails(data.sale); 
+                    else document.getElementById('viewSaleContent').innerHTML=`<div class="alert alert-danger m-3">Failed: ${data.message}</div>`; 
+                })
+                .catch(e=>{ 
+                    document.getElementById('viewSaleContent').innerHTML=`<div class="alert alert-danger m-3">Error: ${e.message}</div>`; 
+                });
             }, 350);
         });
     });
@@ -1221,7 +1496,9 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('viewSaleModal')?.addEventListener('hidden.bs.modal', () => {
         viewModal?.dispose(); viewModal = null;
         document.querySelectorAll('.modal-backdrop').forEach(b=>b.remove());
-        document.body.classList.remove('modal-open'); document.body.style.overflow=''; document.body.style.paddingRight='';
+        document.body.classList.remove('modal-open'); 
+        document.body.style.overflow=''; 
+        document.body.style.paddingRight='';
     });
 
     function displaySaleDetails(sale) {
@@ -1266,10 +1543,26 @@ document.addEventListener('DOMContentLoaded', function () {
                 editModal = new bootstrap.Modal(el, { backdrop:'static', keyboard:true });
                 document.getElementById('editSaleContent').innerHTML = `<div class="text-center py-4"><div class="spinner-border text-warning" role="status"></div><p class="mt-2">Loading...</p></div>`;
                 editModal.show();
-                fetch(`/sales/${currentEditId}/edit-data`, { headers:{ 'Accept':'application/json','X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]')?.content } })
+                fetch(`/sales/${currentEditId}/edit-data`, { 
+                    headers:{ 
+                        'Accept':'application/json',
+                        'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]')?.content 
+                    } 
+                })
                 .then(r=>r.json())
-                .then(data=>{ if(data.success) displaySaleEditForm(data.sale, data.flocks); else document.getElementById('editSaleContent').innerHTML=`<div class="alert alert-danger m-3">Failed: ${data.message}</div>`; })
-                .catch(e=>{ document.getElementById('editSaleContent').innerHTML=`<div class="alert alert-danger m-3">Error: ${e.message}</div>`; });
+                .then(data=>{ 
+                    if(data.success) {
+                        // Use the server-computed productTypes (NEW_SALE_OPTIONS_PER_PRODUCE +
+                        // the sale's own legacy type if applicable) instead of a hardcoded list,
+                        // so eggs shows as a single "Eggs" option here too.
+                        displaySaleEditForm(data.sale, data.flocks, data.productTypes || []);
+                    } else {
+                        document.getElementById('editSaleContent').innerHTML=`<div class="alert alert-danger m-3">Failed: ${data.message}</div>`;
+                    }
+                })
+                .catch(e=>{ 
+                    document.getElementById('editSaleContent').innerHTML=`<div class="alert alert-danger m-3">Error: ${e.message}</div>`; 
+                });
             }, 350);
         });
     });
@@ -1277,46 +1570,225 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('editSaleModal')?.addEventListener('hidden.bs.modal', () => {
         editModal?.dispose(); editModal = null; currentEditId = null;
         document.querySelectorAll('.modal-backdrop').forEach(b=>b.remove());
-        document.body.classList.remove('modal-open'); document.body.style.overflow=''; document.body.style.paddingRight='';
+        document.body.classList.remove('modal-open'); 
+        document.body.style.overflow=''; 
+        document.body.style.paddingRight='';
     });
 
-    function displaySaleEditForm(sale, flocks) {
-        const fo = flocks.map(f => `<option value="${f.id}" ${sale.flock_id==f.id?'selected':''}>${escapeHtml(f.flock_number)} - ${escapeHtml(f.breed_variety)}</option>`).join('');
-        const ptOpts = [['eggs_tray','🥚 Eggs (Tray - 30 eggs)'],['eggs_crate','📦 Eggs (Crate - 12 trays)'],['eggs_box','📦 Eggs (Box - 360 eggs)'],['live_bird','🐓 Live Bird'],['meat_kg','🍗 Meat (per kg)'],['breeding_stock','🧬 Breeding Stock'],['manure','💩 Manure'],['other','📦 Other']]
-            .map(([v,l])=>`<option value="${v}" ${sale.product_type==v?'selected':''}>${l}</option>`).join('');
+    function displaySaleEditForm(sale, flocks, productTypes) {
+        const fo = flocks.map(f => 
+            `<option value="${f.id}" ${sale.flock_id==f.id?'selected':''}>${escapeHtml(f.flock_number)} - ${escapeHtml(f.breed_variety)}</option>`
+        ).join('');
+
+        // Built from the server's productTypes (NEW_SALE_OPTIONS_PER_PRODUCE),
+        // same pattern as the create form — no hardcoded egg subtypes.
+        // The sale's own current type is always present in this list even
+        // if it's a legacy variant (eggs_tray/crate/box), because
+        // getEditData() on the backend guarantees that.
+        const ptOpts = (productTypes.length > 0 ? productTypes : []).map(pt => {
+            const stockNote = pt.available !== null && pt.available !== undefined
+                ? ` — ${Number(pt.available).toFixed(2)} ${pt.unit} available`
+                : '';
+            return `<option value="${pt.value}" ${sale.product_type === pt.value ? 'selected' : ''}>${escapeHtml(pt.label)}${stockNote}</option>`;
+        }).join('');
+
         document.getElementById('editSaleContent').innerHTML = `
-            <form id="editSaleForm"><div class="row">
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Product Type <span class="text-danger">*</span></label>
-                    <select name="product_type" class="form-select" required>${ptOpts}</select></div>
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Sale Date <span class="text-danger">*</span></label>
-                    <input type="date" name="sale_date" class="form-control" value="${sale.sale_date}" required></div>
-                <div class="col-md-4 mb-3"><label class="form-label fw-semibold">Quantity <span class="text-danger">*</span></label>
-                    <input type="number" name="quantity" id="editQty" class="form-control" step="0.01" min="0.01" value="${sale.quantity}" required></div>
-                <div class="col-md-4 mb-3"><label class="form-label fw-semibold">Unit Price (₵) <span class="text-danger">*</span></label>
-                    <div class="input-group"><span class="input-group-text">₵</span>
-                    <input type="number" name="unit_price" id="editUP" class="form-control" step="0.01" min="0.01" value="${sale.unit_price}" required></div></div>
-                <div class="col-md-4 mb-3"><label class="form-label fw-semibold">Total (₵)</label>
-                    <div class="input-group"><span class="input-group-text">₵</span>
-                    <input type="number" name="total_amount" id="editTA" class="form-control" step="0.01" readonly style="background:#f8fafc;" value="${sale.total_amount}"></div></div>
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Customer Name</label>
-                    <input type="text" name="customer_name" class="form-control" value="${escapeHtml(sale.customer_name||'')}"></div>
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Payment Method</label>
-                    <select name="payment_method" class="form-select">
-                        <option value="">Select Payment Method</option>
-                        ${[['cash','💵 Cash'],['bank_transfer','🏦 Bank Transfer'],['mobile_money','📱 Mobile Money (MoMo)'],['check','📝 Cheque']].map(([v,l])=>`<option value="${v}" ${sale.payment_method==v?'selected':''}>${l}</option>`).join('')}
-                    </select></div>
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Receipt Number</label>
-                    <input type="text" name="receipt_number" class="form-control" value="${escapeHtml(sale.receipt_number||'')}"></div>
-                <div class="col-md-6 mb-3"><label class="form-label fw-semibold">Associated Flock</label>
-                    <select name="flock_id" class="form-select"><option value="">None - General Sale</option>${fo}</select></div>
-                <div class="col-12 mb-3"><label class="form-label fw-semibold">Description</label>
-                    <input type="text" name="description" class="form-control" value="${escapeHtml(sale.description||'')}"></div>
-                <div class="col-12 mb-3"><label class="form-label fw-semibold">Notes</label>
-                    <textarea name="notes" class="form-control" rows="2">${escapeHtml(sale.notes||'')}</textarea></div>
-            </div></form>`;
-        const qi=document.getElementById('editQty'), upi=document.getElementById('editUP'), tai=document.getElementById('editTA');
-        const calc=()=>{tai.value=((parseFloat(qi.value)||0)*(parseFloat(upi.value)||0)).toFixed(2);};
-        qi.addEventListener('input',calc); upi.addEventListener('input',calc);
+            <form id="editSaleForm">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Product Type <span class="text-danger">*</span></label>
+                        <select name="product_type" id="editProductType" class="form-select" required>
+                            ${ptOpts}
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Sale Date <span class="text-danger">*</span></label>
+                        <input type="date" name="sale_date" class="form-control" value="${sale.sale_date}" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Associated Flock</label>
+                        <select name="flock_id" id="editFlockId" class="form-select">
+                            <option value="">None - General Sale</option>
+                            ${fo}
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div id="editAvailableStockDisplay">
+                            <span class="text-muted">Select a flock and product to check availability</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-semibold">Quantity <span class="text-danger">*</span></label>
+                        <input type="number" name="quantity" id="editQuantity" class="form-control" step="0.01" min="0.01" value="${sale.quantity}" required>
+                        <div id="editQuantityFeedback" class="small mt-1"></div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-semibold">Unit Price (₵) <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text">₵</span>
+                            <input type="number" name="unit_price" id="editUnitPrice" class="form-control" step="0.01" min="0.01" value="${sale.unit_price}" required>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-semibold">Total (₵)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">₵</span>
+                            <input type="number" name="total_amount" id="editTotalAmount" class="form-control" step="0.01" readonly style="background:#f8fafc;" value="${sale.total_amount}">
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Customer Name</label>
+                        <input type="text" name="customer_name" class="form-control" value="${escapeHtml(sale.customer_name||'')}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Payment Method</label>
+                        <select name="payment_method" class="form-select">
+                            <option value="">Select Payment Method</option>
+                            ${[['cash','💵 Cash'],['bank_transfer','🏦 Bank Transfer'],['mobile_money','📱 Mobile Money (MoMo)'],['check','📝 Cheque']].map(([v,l])=>`<option value="${v}" ${sale.payment_method==v?'selected':''}>${l}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Receipt Number</label>
+                        <input type="text" class="form-control" value="${escapeHtml(sale.receipt_number||'')}" readonly style="background:#f8fafc;">
+                        <small class="text-muted">Auto-generated, cannot be changed</small>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-semibold">Description</label>
+                        <input type="text" name="description" class="form-control" value="${escapeHtml(sale.description||'')}">
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-semibold">Notes</label>
+                        <textarea name="notes" class="form-control" rows="2">${escapeHtml(sale.notes||'')}</textarea>
+                    </div>
+                </div>
+            </form>
+            <div id="editStockWarning" class="stock-warning d-none">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <span id="editStockWarningText"></span>
+            </div>
+        `;
+
+        // ── Event Listeners for Real-time Stock Check (Edit) ──
+        const productTypeSelect = document.getElementById('editProductType');
+        const flockSelect = document.getElementById('editFlockId');
+        const quantityInput = document.getElementById('editQuantity');
+        const unitPriceInput = document.getElementById('editUnitPrice');
+        const totalAmountInput = document.getElementById('editTotalAmount');
+        const stockDisplay = document.getElementById('editAvailableStockDisplay');
+        const quantityFeedback = document.getElementById('editQuantityFeedback');
+        const stockWarning = document.getElementById('editStockWarning');
+        const stockWarningText = document.getElementById('editStockWarningText');
+
+        function calculateTotal() {
+            const qty = parseFloat(quantityInput.value) || 0;
+            const price = parseFloat(unitPriceInput.value) || 0;
+            totalAmountInput.value = (qty * price).toFixed(2);
+            validateQuantityAgainstStock();
+        }
+
+        function validateQuantityAgainstStock() {
+            const qty = parseFloat(quantityInput.value) || 0;
+            const available = parseFloat(stockDisplay.dataset.available) || 0;
+            const unit = stockDisplay.dataset.unit || 'units';
+            const saveBtn = document.getElementById('saveEditSale');
+
+            if (qty <= 0) {
+                quantityFeedback.innerHTML = '';
+                if (saveBtn) saveBtn.disabled = false;
+                stockWarning.classList.add('d-none');
+                return;
+            }
+
+            if (available > 0 && qty > available) {
+                quantityFeedback.innerHTML = `<span class="text-danger">⚠️ Quantity (${qty.toFixed(2)}) exceeds available stock (${available.toFixed(2)} ${unit})</span>`;
+                if (saveBtn) saveBtn.disabled = true;
+                stockWarning.classList.remove('d-none');
+                stockWarning.classList.add('danger');
+                stockWarningText.textContent = `You are trying to sell ${qty.toFixed(2)} ${unit} but only ${available.toFixed(2)} ${unit} is available for this flock.`;
+            } else if (available <= 0 && qty > 0) {
+                quantityFeedback.innerHTML = `<span class="text-danger">⚠️ No stock available for this product/flock combination</span>`;
+                if (saveBtn) saveBtn.disabled = true;
+                stockWarning.classList.remove('d-none');
+                stockWarning.classList.add('danger');
+                stockWarningText.textContent = `No stock available for this product. Please record produce first.`;
+            } else {
+                quantityFeedback.innerHTML = '';
+                if (saveBtn) saveBtn.disabled = false;
+                stockWarning.classList.add('d-none');
+                stockWarning.classList.remove('danger');
+            }
+        }
+
+        async function checkStock() {
+            const flockId = flockSelect.value;
+            const productType = productTypeSelect.value;
+            const excludeId = currentEditId;
+
+            if (!flockId || !productType) {
+                stockDisplay.innerHTML = '<span class="text-muted">Select both a flock and product to check availability</span>';
+                stockDisplay.dataset.available = '0';
+                stockDisplay.dataset.unit = 'units';
+                quantityFeedback.innerHTML = '';
+                stockWarning.classList.add('d-none');
+                document.getElementById('saveEditSale').disabled = false;
+                return;
+            }
+
+            stockDisplay.innerHTML = '<span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Checking stock...</span>';
+
+            try {
+                const data = await checkStockAvailability(flockId, productType, parseFloat(quantityInput.value) || 0, excludeId);
+                
+                const available = data.available || 0;
+                const unit = data.unit || 'units';
+                const label = data.label || productType;
+
+                stockDisplay.dataset.available = available;
+                stockDisplay.dataset.unit = unit;
+
+                let html = '';
+                if (available > 0) {
+                    html = `
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-success">${available.toFixed(2)} ${unit} available</span>
+                            <small class="text-muted">${label}</small>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Current sale quantity (${parseFloat(quantityInput.value || 0).toFixed(2)} ${unit}) is excluded from this calculation
+                        </div>
+                    `;
+                } else {
+                    html = `
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-danger">No stock available</span>
+                            <small class="text-muted">${label}</small>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Record produce for this flock first
+                        </div>
+                    `;
+                }
+                stockDisplay.innerHTML = html;
+                validateQuantityAgainstStock();
+
+            } catch (error) {
+                stockDisplay.innerHTML = `<span class="text-danger">Error checking stock</span>`;
+                console.error(error);
+            }
+        }
+
+        productTypeSelect.addEventListener('change', checkStock);
+        flockSelect.addEventListener('change', checkStock);
+        quantityInput.addEventListener('input', function() {
+            calculateTotal();
+            validateQuantityAgainstStock();
+        });
+        unitPriceInput.addEventListener('input', calculateTotal);
+
+        // Initial check
+        setTimeout(checkStock, 300);
     }
 
     document.getElementById('saveEditSale')?.addEventListener('click', function () {
@@ -1326,18 +1798,45 @@ document.addEventListener('DOMContentLoaded', function () {
         new FormData(form).forEach((v,k)=>{data[k]=v;});
         if (!data.total_amount||data.total_amount==0)
             data.total_amount=((parseFloat(data.quantity)||0)*(parseFloat(data.unit_price)||0)).toFixed(2);
-        const btn=this; btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin me-2"></i>Updating...';
+        const btn=this; 
+        btn.disabled=true; 
+        btn.innerHTML='<i class="fas fa-spinner fa-spin me-2"></i>Updating...';
+        
         fetch(`/sales/${currentEditId}/update-ajax`,{
             method:'PUT',
-            headers:{'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]')?.content,'Accept':'application/json','Content-Type':'application/json'},
+            headers:{
+                'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]')?.content,
+                'Accept':'application/json',
+                'Content-Type':'application/json'
+            },
             body:JSON.stringify(data)
         })
         .then(r=>r.json())
         .then(data=>{
-            if(data.success){editModal?.hide();Swal.fire({icon:'success',title:'Updated!',text:'Sale updated successfully',timer:1500,showConfirmButton:false}).then(()=>window.location.reload());}
-            else{Swal.fire({icon:'error',title:'Error',text:data.message||'Failed'});btn.disabled=false;btn.innerHTML='Update Sale';}
+            if(data.success){
+                editModal?.hide();
+                Swal.fire({
+                    icon:'success', 
+                    title:'Updated!', 
+                    text:'Sale updated successfully', 
+                    timer:1500, 
+                    showConfirmButton:false
+                }).then(()=>window.location.reload());
+            } else {
+                Swal.fire({
+                    icon:'error', 
+                    title:'Error', 
+                    text:data.message || 'Failed'
+                });
+                btn.disabled=false; 
+                btn.innerHTML='Update Sale';
+            }
         })
-        .catch(()=>{Swal.fire({icon:'error',title:'Error',text:'An error occurred'});btn.disabled=false;btn.innerHTML='Update Sale';});
+        .catch(()=>{
+            Swal.fire({icon:'error', title:'Error', text:'An error occurred'});
+            btn.disabled=false; 
+            btn.innerHTML='Update Sale';
+        });
     });
 
     /* ── Delete ── */
@@ -1345,14 +1844,19 @@ document.addEventListener('DOMContentLoaded', function () {
         btn.addEventListener('click', function () {
             const id = this.dataset.id;
             Swal.fire({
-                title: 'Delete Sale', text: 'Are you sure you want to delete this sale record?',
-                icon: 'warning', showCancelButton: true,
-                confirmButtonColor: '#dc2626', cancelButtonColor: '#6c757d',
-                confirmButtonText: 'Yes, delete it!', cancelButtonText: 'Cancel'
+                title: 'Delete Sale', 
+                text: 'Are you sure you want to delete this sale record?',
+                icon: 'warning', 
+                showCancelButton: true,
+                confirmButtonColor: '#dc2626', 
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, delete it!', 
+                cancelButtonText: 'Cancel'
             }).then(result => {
                 if (result.isConfirmed) {
                     const form = document.getElementById('deleteSaleForm');
-                    form.action = `/sales/${id}`; form.submit();
+                    form.action = `/sales/${id}`; 
+                    form.submit();
                 }
             });
         });

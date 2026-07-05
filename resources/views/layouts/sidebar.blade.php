@@ -312,6 +312,7 @@
           <li><a href="{{ route('reports.performance') }}">Performance</a></li>
           <li><a href="{{ route('reports.health') }}">Health</a></li>
           <li><a href="{{ route('analytics.index') }}">Analytics</a></li>
+          <li><a href="{{ route('reports.total-animals') }}">Total Animals</a></li>
         </ul>
       </li>
       @endif

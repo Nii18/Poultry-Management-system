@@ -6,9 +6,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Factories\HasFactory; 
 
 class FarmProduce extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'flock_id',
         'product_type',    // now free-text — no longer restricted to a fixed list

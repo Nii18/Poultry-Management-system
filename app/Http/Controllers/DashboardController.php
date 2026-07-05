@@ -1,5 +1,4 @@
 <?php
-// app/Http/Controllers/DashboardController.php
 
 namespace App\Http\Controllers;
 
@@ -16,8 +15,8 @@ use App\Models\FeedDelivery;
 use App\Models\House;
 use App\Models\User;
 use App\Models\WorkerTask;
-use App\Models\WorkerTaskAssignment;   // ← added
-use App\Services\DailyTaskService;     // ← added
+use App\Models\WorkerTaskAssignment;
+use App\Services\DailyTaskService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -25,7 +24,7 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
-    public function __construct(protected DailyTaskService $taskService) {}   // ← added
+    public function __construct(protected DailyTaskService $taskService) {}
 
     public function index(Request $request)
     {
@@ -69,9 +68,13 @@ class DashboardController extends Controller
 
         $activeFlocks  = $flocksQuery->where('status', 'active')->get();
         $closedFlocks  = $flocksQuery->where('status', 'closed')->count();
-        $totalAnimals  = Flock::where('status', 'active')
-            ->when($speciesId, fn($q) => $q->where('species_id', $speciesId))
-            ->sum('current_count');
+
+        // FIX: current_count is a computed accessor, not a DB column.
+        // ->sum('current_count') at the query-builder level returns 0/null
+        // because it compiles to raw SQL SUM() on a nonexistent column.
+        // Sum over the already-loaded $activeFlocks collection instead so
+        // the PHP accessor actually runs.
+        $totalAnimals = $activeFlocks->sum('current_count');
 
         $totalMortalityToday = $dailyLogsQuery->whereDate('log_date', Carbon::today())->sum('mortality_count');
 
@@ -110,11 +113,18 @@ class DashboardController extends Controller
 
         $species = Species::where('is_active', true)->get();
 
+        // FIX: build one active-flocks collection per species with ->get(),
+        // then reuse it for sum/count/avg in PHP. Previously this ran
+        // ->sum('current_count') on the query builder (broken, see above)
+        // and separately re-queried for ->count() and ->get()->avg(),
+        // doing 3 DB round-trips per species instead of 1.
         $speciesStats = [];
         $speciesIdMap = [];
 
         foreach ($species as $spec) {
-            $speciesFlock = Flock::where('species_id', $spec->id)->where('status', 'active');
+            $speciesFlock = Flock::where('species_id', $spec->id)
+                ->where('status', 'active')
+                ->get();
 
             $speciesName = $spec->name;
 
@@ -142,7 +152,7 @@ class DashboardController extends Controller
                 'color'         => $iconColor,
                 'total_animals' => $speciesFlock->sum('current_count'),
                 'active_flocks' => $speciesFlock->count(),
-                'avg_fcr'       => round($speciesFlock->get()->avg('feed_conversion_ratio'), 2),
+                'avg_fcr'       => round($speciesFlock->avg('feed_conversion_ratio'), 2),
             ];
 
             $speciesIdMap[$spec->code] = $spec->id;
@@ -160,7 +170,7 @@ class DashboardController extends Controller
     {
         $activeFlocks      = Flock::where('status', 'active')->get();
         $activeFlocksCount = $activeFlocks->count();
-        $totalAnimals      = $activeFlocks->sum('current_count');
+        $totalAnimals      = $activeFlocks->sum('current_count'); // already correct — collection sum
 
         $avgFCR = 0;
         try {
@@ -305,54 +315,29 @@ class DashboardController extends Controller
         $todayMortality       = DailyLog::whereDate('log_date', Carbon::today())->sum('mortality_count');
         $todayFeedConsumption = DailyLog::whereDate('log_date', Carbon::today())->sum('feed_intake_kg');
 
-        // ── Today's tasks ─────────────────────────────────────────────────────
-        //
-        // FIX: load WorkerTaskAssignment rows (not WorkerTask templates).
-        //
-        // WorkerTaskAssignment stores status, is_completed, and completed_at
-        // per worker per day — these columns persist across page refreshes.
-        // WorkerTask is only the template definition and has no per-day status.
-        //
-        // We also run the DailyTaskService to ensure recurring templates have
-        // been materialised into assignment rows for today before we query.
-        //
         $todayTasks = collect();
 
-        // Current time-window name (morning/afternoon/evening/none), used by
-        // the Blade view to lock tasks whose window hasn't opened yet — mirrors
-        // the same logic already used on the worker/tasks page.
-        $currentWindow = $this->taskService->currentWindow();   // ← added
+        $currentWindow = $this->taskService->currentWindow();
 
         if (in_array($user->role, ['worker', 'head_worker'])) {
-            // Materialise any recurring WorkerTask templates into today's
-            // WorkerTaskAssignment rows (idempotent — safe to call on every load).
             $this->taskService->generateForWorker($userId);
 
-            // Load today's assignment rows with the task relationship so the
-            // Blade template can access title, description, priority, times etc.
             $todayTasks = WorkerTaskAssignment::where('assigned_to', $userId)
                 ->whereDate('assignment_date', Carbon::today())
                 ->with([
                     'task' => fn($q) => $q->select(
                         'id', 'title', 'description', 'priority',
-                        'start_time', 'end_time', 'window'   // ← added 'window'
+                        'start_time', 'end_time', 'window'
                     ),
                 ])
                 ->get()
-                // Sort by the task's scheduled start_time, not by when the
-                // assignment row was created. A task assigned later in the day
-                // (e.g. a manager adding a 1:47 PM task this morning) must still
-                // appear in time order, not get appended to the end of the list.
-                // Mirrors the same sort used in DailyTaskService::getGroupedAssignments().
                 ->sortBy(fn($assignment) => $assignment->task?->start_time)
                 ->values();
         }
 
-        // Derived counts (used by the stat card counter in the Blade)
         $totalTasksToday     = $todayTasks->count();
         $completedTasksToday = $todayTasks->where('status', 'completed')->count();
 
-        // ── Recent activity ───────────────────────────────────────────────────
         $myRecentLogs = DailyLog::with('flock')
             ->where('created_by', $userId)
             ->latest()
@@ -368,7 +353,6 @@ class DashboardController extends Controller
                 ->get();
         }
 
-        // ── Trends ───────────────────────────────────────────────────────────
         $feedTrend = DailyLog::where('log_date', '>=', Carbon::now()->subDays(7))
             ->select(DB::raw('DATE(log_date) as date'), DB::raw('SUM(feed_intake_kg) as total_feed'))
             ->groupBy('date')
@@ -381,7 +365,6 @@ class DashboardController extends Controller
             ->orderBy('date')
             ->get();
 
-        // ── Misc ──────────────────────────────────────────────────────────────
         $lowFeedStock = FeedDelivery::with('feedType')
             ->where('remaining_quantity_kg', '<', 500)
             ->where('expiry_date', '>', now())
@@ -398,7 +381,7 @@ class DashboardController extends Controller
             'activeFlocks', 'todayMortality', 'todayFeedConsumption',
             'todayTasks', 'totalTasksToday', 'completedTasksToday',
             'myRecentLogs', 'teamRecentLogs', 'feedTrend', 'mortalityTrend',
-            'lowFeedStock', 'teamMembers', 'isAdminOrManager', 'currentWindow'   // ← added
+            'lowFeedStock', 'teamMembers', 'isAdminOrManager', 'currentWindow'
         ));
     }
 
@@ -435,25 +418,47 @@ class DashboardController extends Controller
     {
         $speciesId = $request->get('species_id');
 
-        $paginatedFlocks = Flock::with(['species', 'house'])
+        // FIX: current_count is a computed accessor (initial_count - total_mortality),
+        // not a real DB column. Any ->sum('current_count') or ->orderBy('current_count')
+        // run at the query-builder level silently fails (SQL SUM() on a nonexistent
+        // column returns 0/null; orderBy on a nonexistent column errors or no-ops
+        // depending on strict mode). Load matching flocks into a collection first,
+        // then sort/sum/paginate in PHP so the accessor actually executes.
+        $allActiveFlocks = Flock::with(['species', 'house'])
             ->where('status', 'active')
             ->when($speciesId, fn($q) => $q->where('species_id', $speciesId))
-            ->orderBy('current_count', 'desc')
-            ->paginate(10)
-            ->appends($request->query());
+            ->get()
+            ->sortByDesc('current_count')
+            ->values();
 
-        $totalAnimals      = Flock::where('status', 'active')->when($speciesId, fn($q) => $q->where('species_id', $speciesId))->sum('current_count');
-        $activeFlocksCount = Flock::where('status', 'active')->when($speciesId, fn($q) => $q->where('species_id', $speciesId))->count();
+        $perPage = 10;
+        $page    = (int) $request->get('page', 1);
+
+        $flocks = new \Illuminate\Pagination\LengthAwarePaginator(
+            $allActiveFlocks->forPage($page, $perPage),
+            $allActiveFlocks->count(),
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
+
+        $totalAnimals      = $allActiveFlocks->sum('current_count');
+        $activeFlocksCount = $allActiveFlocks->count();
         $totalFlocks       = Flock::where('status', 'active')->count();
         $speciesCount      = Species::where('is_active', true)->count();
-        $housesUsed        = House::whereHas('flocks', fn($q) => $q->where('status', 'active'))->count();
+
+        // Distinct houses actually in use by active flocks, rather than
+        // House::whereHas(...)->count(), which was correct in principle but
+        // easy to confuse with active-flock count — made explicit here.
+        $housesUsed = $allActiveFlocks->pluck('house_id')->filter()->unique()->count();
 
         $speciesBreakdown = [];
-        $allActiveTotal   = Flock::where('status', 'active')->sum('current_count');
+        $allActiveTotal   = $totalAnimals;
 
         foreach (Species::where('is_active', true)->get() as $species) {
-            $animalsCount = Flock::where('species_id', $species->id)->where('status', 'active')->sum('current_count');
-            $flocksCount  = Flock::where('species_id', $species->id)->where('status', 'active')->count();
+            $speciesFlocksCollection = $allActiveFlocks->where('species_id', $species->id);
+            $animalsCount = $speciesFlocksCollection->sum('current_count');
+            $flocksCount  = $speciesFlocksCollection->count();
 
             if ($animalsCount === 0) continue;
 
@@ -471,8 +476,6 @@ class DashboardController extends Controller
         }
 
         usort($speciesBreakdown, fn($a, $b) => $b['total_animals'] <=> $a['total_animals']);
-
-        $flocks = $paginatedFlocks;
 
         return view('reports.total-animals', compact(
             'flocks', 'totalAnimals', 'activeFlocksCount', 'totalFlocks',

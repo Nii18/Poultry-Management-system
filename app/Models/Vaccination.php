@@ -5,9 +5,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory; 
 
 class Vaccination extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'flock_id', 'vaccine_name', 'disease_target', 'day_administered',
         'administration_date', 'route', 'batch_number', 'expiry_date',

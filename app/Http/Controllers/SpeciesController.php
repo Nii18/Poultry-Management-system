@@ -241,7 +241,7 @@ class SpeciesController extends Controller
             // Get statistics for this species
             $flockCount = Flock::where('species_id', $id)->count();
             $activeFlockCount = Flock::where('species_id', $id)->where('status', 'active')->count();
-            $totalAnimals = Flock::where('species_id', $id)->sum('current_count');
+            $totalAnimals = Flock::where('species_id', $id)->get()->sum('current_count');
             
             $stats = [
                 'flock_count' => $flockCount,
@@ -501,7 +501,7 @@ class SpeciesController extends Controller
         // Get statistics for this species
         $flockCount = Flock::where('species_id', $id)->count();
         $activeFlockCount = Flock::where('species_id', $id)->where('status', 'active')->count();
-        $totalAnimals = Flock::where('species_id', $id)->sum('current_count');
+        $totalAnimals = Flock::where('species_id', $id)->get()->sum('current_count');
         
         $stats = [
             'flock_count' => $flockCount,

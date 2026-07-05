@@ -14,18 +14,17 @@ use Carbon\Carbon;
 class SaleController extends Controller
 {
     // ──────────────────────────────────────────────────────────────
-    // PRODUCE TYPE → SALE TYPE MAPPING
+    // PRODUCE TYPE → SALE TYPE MAPPING (stock accounting — do not prune)
     //
-    // FarmProduce uses free-text types (e.g. "eggs", "live_bird")
-    // Sale uses specific subtypes (e.g. "eggs_tray", "live_bird").
-    // This map tells us which produce type covers which sale types,
-    // so we can check available stock correctly.
-    //
-    // Key   = produce product_type (from FarmProduce records)
-    // Value = array of sale product_types that consume that produce
+    // Kept intentionally comprehensive, including legacy egg subtypes
+    // (eggs_tray/eggs_crate/eggs_box), so that stock math for OLD sales
+    // stays correct even though new sales no longer offer those types.
+    // See NEW_SALE_OPTIONS_PER_PRODUCE below for what's actually offered
+    // when creating a sale today.
     // ──────────────────────────────────────────────────────────────
     private const PRODUCE_TO_SALE_MAP = [
         'eggs'           => ['eggs_tray', 'eggs_crate', 'eggs_box', 'eggs'],
+        'milk'           => ['milk'],
         'live_bird'      => ['live_bird'],
         'meat'           => ['meat_kg', 'meat'],
         'breeding_stock' => ['breeding_stock'],
@@ -38,6 +37,7 @@ class SaleController extends Controller
         'eggs_crate'     => 'eggs',
         'eggs_box'       => 'eggs',
         'eggs'           => 'eggs',
+        'milk'           => 'milk',
         'live_bird'      => 'live_bird',
         'meat_kg'        => 'meat',
         'meat'           => 'meat',
@@ -45,7 +45,23 @@ class SaleController extends Controller
         'manure'         => 'manure',
     ];
 
-    // Egg unit conversions — how many individual eggs per sale unit
+    // ──────────────────────────────────────────────────────────────
+    // NEW SALE OPTIONS — what's offered in the "Record Sale" dropdown
+    // going forward. Separate from PRODUCE_TO_SALE_MAP above so we can
+    // simplify eggs down to a single "Eggs" choice for new sales without
+    // breaking stock accounting for historical eggs_tray/crate/box sales.
+    // ──────────────────────────────────────────────────────────────
+    private const NEW_SALE_OPTIONS_PER_PRODUCE = [
+        'eggs'           => ['eggs'],
+        'milk'           => ['milk'],
+        'live_bird'      => ['live_bird'],
+        'meat'           => ['meat_kg'],
+        'breeding_stock' => ['breeding_stock'],
+        'manure'         => ['manure'],
+    ];
+
+    // Egg unit conversions — how many individual eggs per sale unit.
+    // Still needed for editing/displaying OLD eggs_tray/crate/box sales.
     private const EGG_UNIT_SIZES = [
         'eggs_tray'  => 30,
         'eggs_crate' => 360,  // 12 trays × 30
@@ -80,11 +96,7 @@ class SaleController extends Controller
         $totalRevenue  = $sales->sum('total_amount');
         $totalQuantity = $sales->sum('quantity');
 
-        // Real remaining-stock figures per SALE product_type (eggs_tray,
-        // eggs_crate, live_bird, meat_kg, etc.), derived from the same
-        // produce-based availability map used when validating new sales.
-        // Replaces the old hardcoded/null capacity guesses in the view.
-        $saleAvailability = $this->buildSaleTypeAvailability();
+        $saleAvailability = $this->buildSaleTypeAvailability($productTypes);
 
         return view('sales.index', compact(
             'sales', 'flocks', 'productTypes',
@@ -96,20 +108,19 @@ class SaleController extends Controller
     // ──────────────────────────────────────────────────────────────
     // CREATE FORM DATA (AJAX)
     //
-    // Only surfaces product types that actually have produce stock.
-    // Includes real-time available quantity for each type so the
-    // frontend can show "X units available" in the form.
+    // Uses NEW_SALE_OPTIONS_PER_PRODUCE (not the full PRODUCE_TO_SALE_MAP)
+    // so eggs shows up as a single "Eggs" choice instead of tray/crate/box
+    // subtypes, while stock math underneath still accounts for all
+    // historical variants correctly.
     // ──────────────────────────────────────────────────────────────
     public function getCreateForm()
     {
         try {
             $flocks = Flock::where('status', 'active')->get(['id', 'flock_number', 'breed_variety']);
 
-            // Build availability map from FarmProduce
             $availability = $this->buildAvailabilityMap();
 
-            // Only offer product types that have something to sell
-            $productTypes = collect(self::PRODUCE_TO_SALE_MAP)
+            $productTypes = collect(self::NEW_SALE_OPTIONS_PER_PRODUCE)
                 ->flatMap(function ($saleTypes, $produceType) use ($availability) {
                     $available = $availability[$produceType]['remaining'] ?? 0;
                     if ($available <= 0) return [];
@@ -123,14 +134,31 @@ class SaleController extends Controller
                 })
                 ->values();
 
-            // Also include any sale types already recorded (for legacy/manual entries)
+            // Also include any OTHER sale types already recorded that aren't
+            // in NEW_SALE_OPTIONS_PER_PRODUCE — e.g. a genuinely custom/
+            // one-off product_type someone typed in manually. This is for
+            // legacy/manual entries only, still validated correctly via
+            // checkStockAvailability()'s fallback.
+            //
+            // IMPORTANT: legacy egg subtypes (eggs_tray/eggs_crate/eggs_box)
+            // are deliberately excluded here. Even if old sales exist with
+            // those types, the "Record Sale" dropdown must only ever offer
+            // the single simplified "Eggs" option going forward — those
+            // subtypes should only surface when editing the specific old
+            // sale record that used them (handled separately in
+            // getEditData()), never here.
+            $legacyEggSubtypes = ['eggs_tray', 'eggs_crate', 'eggs_box'];
+
             $existingSaleTypes = Sale::distinct()->pluck('product_type');
-            $existingSaleTypes->each(function ($type) use (&$productTypes, $availability) {
+            $existingSaleTypes->each(function ($type) use (&$productTypes, $availability, $legacyEggSubtypes) {
+                if (in_array($type, $legacyEggSubtypes, true)) {
+                    return;
+                }
                 if (!$productTypes->firstWhere('value', $type)) {
                     $productTypes->push([
                         'value'     => $type,
                         'label'     => $this->saleTypeLabel($type),
-                        'available' => null, // unknown — no produce record
+                        'available' => null,
                         'unit'      => $this->saleTypeUnit($type),
                     ]);
                 }
@@ -148,9 +176,62 @@ class SaleController extends Controller
     }
 
     // ──────────────────────────────────────────────────────────────
+    // REAL-TIME STOCK AVAILABILITY CHECK (AJAX)
+    //
+    // Powers the "X litres available" live indicator on the create/edit
+    // sale forms as the user picks a flock + product type. This is a
+    // *display* aid only — the authoritative, enforced check happens
+    // server-side in checkStockAvailability() inside storeSaleAjax() /
+    // updateSaleAjax(), so even if the client-side JS is bypassed, an
+    // over-sell is still rejected on save.
+    //
+    // GET /sales/availability?flock_id=&product_type=&exclude_sale_id=
+    // ──────────────────────────────────────────────────────────────
+    public function getAvailability(Request $request)
+    {
+        try {
+            $productType = $request->get('product_type');
+
+            if (!$productType) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product type is required',
+                ], 422);
+            }
+
+            $flockId       = $request->get('flock_id');
+            $excludeSaleId = $request->get('exclude_sale_id');
+            $produceType   = $this->resolveProduceType($productType);
+
+            $availability = $this->buildAvailabilityMap($excludeSaleId, $flockId, [$produceType]);
+            $info         = $availability[$produceType] ?? null;
+            $remaining    = $info['remaining'] ?? 0;
+
+            $availableInSaleUnits = $this->convertProduceToSaleUnits($remaining, $productType, $produceType);
+
+            // Distinguish "no produce recorded at all" from "produced but sold out",
+            // so the UI can nudge the user to record produce first when relevant.
+            $hasProduceRecord = $info && $info['produced'] > 0;
+
+            return response()->json([
+                'success'           => true,
+                'available'         => round($availableInSaleUnits, 2),
+                'unit'              => $this->saleTypeUnit($productType),
+                'label'             => $this->saleTypeLabel($productType),
+                'has_stock'         => $availableInSaleUnits > 0,
+                'has_produce_record'=> $hasProduceRecord,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // STORE (AJAX)
     //
-    // Validates stock availability before saving.
+    // receipt_number is always auto-generated from the new sale's own
+    // id, ignoring any client-supplied value — guarantees a clean,
+    // sequential, unique series (e.g. SALE-000123).
     // ──────────────────────────────────────────────────────────────
     public function storeSaleAjax(Request $request)
     {
@@ -164,7 +245,6 @@ class SaleController extends Controller
                 'flock_id'       => 'nullable|exists:flocks,id',
                 'customer_name'  => 'nullable|string|max:255',
                 'payment_method' => 'nullable|string|max:50',
-                'receipt_number' => 'nullable|string|max:100',
                 'description'    => 'nullable|string|max:255',
                 'notes'          => 'nullable|string',
             ]);
@@ -173,12 +253,11 @@ class SaleController extends Controller
                 return response()->json(['success' => false, 'message' => $validator->errors()->first()], 422);
             }
 
-            // ── Stock availability check ───────────────────────────
             $stockCheck = $this->checkStockAvailability(
                 $request->product_type,
                 $request->quantity,
                 $request->flock_id,
-                null  // no sale to exclude (new record)
+                null
             );
 
             if (!$stockCheck['ok']) {
@@ -197,11 +276,14 @@ class SaleController extends Controller
                 'sale_date'      => $request->sale_date,
                 'customer_name'  => $request->customer_name,
                 'payment_method' => $request->payment_method,
-                'receipt_number' => $request->receipt_number,
+                'receipt_number' => null, // set below, once we have a real id
                 'description'    => $request->description,
                 'notes'          => $request->notes,
                 'created_by'     => auth()->id(),
             ]);
+
+            $sale->receipt_number = $this->generateReceiptNumber($sale->id);
+            $sale->save();
 
             $this->notifications->notifySaleRecorded(
                 $sale->product_type,
@@ -211,9 +293,10 @@ class SaleController extends Controller
             );
 
             return response()->json([
-                'success' => true,
-                'message' => 'Sale recorded successfully',
-                'sale_id' => $sale->id,
+                'success'        => true,
+                'message'        => 'Sale recorded successfully',
+                'sale_id'        => $sale->id,
+                'receipt_number' => $sale->receipt_number,
             ]);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
@@ -265,11 +348,12 @@ class SaleController extends Controller
             $sale   = Sale::findOrFail($id);
             $flocks = Flock::where('status', 'active')->get(['id', 'flock_number', 'breed_variety']);
 
-            // Build availability for the edit form — include the current
-            // sale's own quantity so it doesn't block editing
-            $availability = $this->buildAvailabilityMap(excludeSaleId: $id);
+            $availability = $this->buildAvailabilityMap(
+                excludeSaleId: $id,
+                flockId: $sale->flock_id
+            );
 
-            $productTypes = collect(self::PRODUCE_TO_SALE_MAP)
+            $productTypes = collect(self::NEW_SALE_OPTIONS_PER_PRODUCE)
                 ->flatMap(function ($saleTypes, $produceType) use ($availability) {
                     return collect($saleTypes)->map(fn($st) => [
                         'value'     => $st,
@@ -282,7 +366,9 @@ class SaleController extends Controller
                 })
                 ->values();
 
-            // Always include the current sale's type even if stock is 0
+            // Always include the current sale's own type, even if it's a
+            // legacy variant (eggs_tray, etc.) no longer offered for new
+            // sales, so editing an old record doesn't silently reassign it.
             if (!$productTypes->firstWhere('value', $sale->product_type)) {
                 $productTypes->push([
                     'value'     => $sale->product_type,
@@ -320,8 +406,8 @@ class SaleController extends Controller
     // ──────────────────────────────────────────────────────────────
     // UPDATE (AJAX)
     //
-    // Same stock check as store, but excludes the current sale's
-    // own quantity so editing doesn't block itself.
+    // receipt_number is excluded from mass update — it's permanent once
+    // assigned at creation and can never be changed via the edit form.
     // ──────────────────────────────────────────────────────────────
     public function updateSaleAjax(Request $request, $id)
     {
@@ -335,7 +421,6 @@ class SaleController extends Controller
                 'flock_id'       => 'nullable|exists:flocks,id',
                 'customer_name'  => 'nullable|string|max:255',
                 'payment_method' => 'nullable|string|max:50',
-                'receipt_number' => 'nullable|string|max:100',
                 'description'    => 'nullable|string|max:255',
                 'notes'          => 'nullable|string',
             ]);
@@ -344,12 +429,11 @@ class SaleController extends Controller
                 return response()->json(['success' => false, 'message' => $validator->errors()->first()], 422);
             }
 
-            // ── Stock check — exclude this sale's current quantity ──
             $stockCheck = $this->checkStockAvailability(
                 $request->product_type,
                 $request->quantity,
                 $request->flock_id,
-                $id  // exclude current sale from "already sold" count
+                $id
             );
 
             if (!$stockCheck['ok']) {
@@ -360,7 +444,7 @@ class SaleController extends Controller
             }
 
             $sale = Sale::findOrFail($id);
-            $sale->update($request->all());
+            $sale->update($request->except('receipt_number'));
 
             return response()->json(['success' => true, 'message' => 'Sale updated successfully']);
         } catch (\Exception $e) {
@@ -420,46 +504,55 @@ class SaleController extends Controller
     // ══════════════════════════════════════════════════════════════
 
     /**
-     * Build a complete availability map keyed by produce product_type.
-     *
-     * Returns:
-     *   [
-     *     'eggs' => [
-     *       'produced'  => 1200.00,
-     *       'damaged'   => 24.00,
-     *       'available' => 1176.00,
-     *       'sold'      => 540.00,   // in produce units (individual eggs)
-     *       'remaining' => 636.00,
-     *     ],
-     *     ...
-     *   ]
-     *
-     * @param int|null $excludeSaleId  Exclude a specific sale from the "sold"
-     *                                 count (used when editing that sale).
+     * Generate a sequential, human-readable sale/receipt number based on
+     * the sale's own database id (e.g. SALE-000123). Using the id
+     * guarantees global uniqueness with zero race-condition risk — MySQL's
+     * auto-increment already serializes that for us — and the numbers stay
+     * strictly increasing over time, so a lower number always means an
+     * earlier sale, making it useful as a lookup reference ("Sale #123").
      */
-    private function buildAvailabilityMap(?int $excludeSaleId = null): array
+    private function generateReceiptNumber(int $saleId): string
     {
-        // Total produced & damaged per produce type
+        return 'SALE-' . str_pad((string) $saleId, 6, '0', STR_PAD_LEFT);
+    }
+
+    private function resolveProduceType(string $saleType): string
+    {
+        return self::SALE_TO_PRODUCE_MAP[$saleType] ?? $saleType;
+    }
+
+    private function buildAvailabilityMap(
+        ?int $excludeSaleId = null,
+        ?int $flockId = null,
+        array $extraProduceTypes = []
+    ): array {
         $produced = FarmProduce::select(
                 'product_type',
                 DB::raw('SUM(quantity) as total_produced'),
                 DB::raw('SUM(COALESCE(quantity_damaged, 0)) as total_damaged')
             )
+            ->when($flockId, fn($q) => $q->where('flock_id', $flockId))
             ->groupBy('product_type')
             ->get()
             ->keyBy('product_type');
 
+        $produceTypesToBuild = array_unique(array_merge(
+            array_keys(self::PRODUCE_TO_SALE_MAP),
+            $extraProduceTypes
+        ));
+
         $map = [];
 
-        foreach (self::PRODUCE_TO_SALE_MAP as $produceType => $saleTypes) {
+        foreach ($produceTypesToBuild as $produceType) {
             $row       = $produced[$produceType] ?? null;
             $available = $row ? max(0, (float)$row->total_produced - (float)$row->total_damaged) : 0;
 
-            // Sum all sales that consume this produce type, converting back
-            // to produce units so the comparison is apples-to-apples
+            $saleTypes = self::PRODUCE_TO_SALE_MAP[$produceType] ?? [$produceType];
+
             $soldInProduceUnits = 0;
             foreach ($saleTypes as $saleType) {
                 $saleQty = Sale::where('product_type', $saleType)
+                    ->when($flockId, fn($q) => $q->where('flock_id', $flockId))
                     ->when($excludeSaleId, fn($q) => $q->where('id', '!=', $excludeSaleId))
                     ->sum('quantity');
 
@@ -480,41 +573,26 @@ class SaleController extends Controller
         return $map;
     }
 
-    /**
-     * Check whether enough stock exists to record this sale.
-     *
-     * For egg-type sales we convert everything to individual eggs so that
-     * selling 1 crate (360 eggs) correctly depletes against the egg produce
-     * record regardless of whether eggs were recorded in pieces, trays, etc.
-     *
-     * For other types (live_bird, meat, manure, breeding_stock) quantities
-     * are compared directly.
-     */
     private function checkStockAvailability(
         string $saleType,
         float  $saleQty,
         ?int   $flockId,
         ?int   $excludeSaleId
     ): array {
-        $produceType = self::SALE_TO_PRODUCE_MAP[$saleType] ?? null;
+        $produceType = $this->resolveProduceType($saleType);
 
-        // If we don't recognise the sale type, allow it through with a warning
-        if (!$produceType) {
-            return ['ok' => true, 'message' => ''];
-        }
-
-        $availability = $this->buildAvailabilityMap($excludeSaleId);
+        $availability = $this->buildAvailabilityMap($excludeSaleId, $flockId, [$produceType]);
         $info         = $availability[$produceType] ?? null;
 
         if (!$info || $info['produced'] == 0) {
+            $scope = $flockId ? ' for this flock' : '';
             return [
                 'ok'      => false,
-                'message' => "No produce records found for '{$produceType}'. "
+                'message' => "No produce records found{$scope} for '{$produceType}'. "
                            . "Please record produce before making a sale.",
             ];
         }
 
-        // Convert the sale quantity into produce units for comparison
         $saleInProduceUnits = $this->convertSaleToProduceUnits($saleQty, $saleType, $produceType);
         $remaining          = $info['remaining'];
 
@@ -522,10 +600,11 @@ class SaleController extends Controller
             $humanRemaining = $this->convertProduceToSaleUnits($remaining, $saleType, $produceType);
             $label          = $this->saleTypeLabel($saleType);
             $unit           = $this->saleTypeUnit($saleType);
+            $scope          = $flockId ? ' for this flock' : '';
 
             return [
                 'ok'      => false,
-                'message' => "Insufficient stock for {$label}. "
+                'message' => "Insufficient stock{$scope} for {$label}. "
                            . "Available: " . number_format($humanRemaining, 2) . " {$unit}. "
                            . "You are trying to sell " . number_format($saleQty, 2) . " {$unit}.",
             ];
@@ -534,33 +613,30 @@ class SaleController extends Controller
         return ['ok' => true, 'message' => ''];
     }
 
-    /**
-     * Build a "remaining stock" figure for every known SALE product type
-     * (not produce type), expressed in that sale type's own units
-     * (e.g. trays, crates, birds, kg). Used by the Sales index stat-card
-     * modals to show accurate "Stock Available" figures instead of guesses.
-     *
-     * Returns: [ 'eggs_tray' => 42.0, 'live_bird' => 180.0, ... ]
-     */
-    private function buildSaleTypeAvailability(): array
+    private function buildSaleTypeAvailability($extraSaleTypes = []): array
     {
-        $availability = $this->buildAvailabilityMap();
+        $allSaleTypes = array_unique(array_merge(
+            array_keys(self::SALE_TO_PRODUCE_MAP),
+            is_array($extraSaleTypes) ? $extraSaleTypes : $extraSaleTypes->toArray()
+        ));
+
+        $produceTypesNeeded = array_unique(array_map(
+            fn($st) => $this->resolveProduceType($st),
+            $allSaleTypes
+        ));
+
+        $availability = $this->buildAvailabilityMap(null, null, $produceTypesNeeded);
         $result = [];
 
-        foreach (self::SALE_TO_PRODUCE_MAP as $saleType => $produceType) {
-            $remaining = $availability[$produceType]['remaining'] ?? 0;
+        foreach ($allSaleTypes as $saleType) {
+            $produceType = $this->resolveProduceType($saleType);
+            $remaining   = $availability[$produceType]['remaining'] ?? 0;
             $result[$saleType] = $this->convertProduceToSaleUnits($remaining, $saleType, $produceType);
         }
 
         return $result;
     }
 
-    /**
-     * Convert a sale quantity into the equivalent produce quantity.
-     *
-     * Example: 2 trays → 60 individual eggs (2 × 30)
-     * Example: 5 live birds → 5 birds
-     */
     private function convertSaleToProduceUnits(float $saleQty, string $saleType, string $produceType): float
     {
         if ($produceType === 'eggs') {
@@ -568,16 +644,9 @@ class SaleController extends Controller
             return $saleQty * $unitSize;
         }
 
-        // For all other types, quantities are directly comparable
         return $saleQty;
     }
 
-    /**
-     * Convert a produce quantity into the equivalent sale quantity.
-     *
-     * Example: 360 individual eggs → 12 trays
-     * Example: 10 birds → 10 live_bird
-     */
     private function convertProduceToSaleUnits(float $produceQty, string $saleType, string $produceType): float
     {
         if ($produceType === 'eggs') {
@@ -588,16 +657,14 @@ class SaleController extends Controller
         return $produceQty;
     }
 
-    /**
-     * Human-readable label for a sale product type.
-     */
     private function saleTypeLabel(string $type): string
     {
         $labels = [
-            'eggs_tray'      => 'Eggs (Tray — 30 eggs)',
-            'eggs_crate'     => 'Eggs (Crate — 360 eggs)',
-            'eggs_box'       => 'Eggs (Box — 360 eggs)',
+            'eggs_tray'      => 'Eggs (Tray — 30 eggs)', // legacy display only
+            'eggs_crate'     => 'Eggs (Crate — 360 eggs)', // legacy display only
+            'eggs_box'       => 'Eggs (Box — 360 eggs)', // legacy display only
             'eggs'           => 'Eggs',
+            'milk'           => 'Milk',
             'live_bird'      => 'Live Bird',
             'meat_kg'        => 'Meat (per kg)',
             'meat'           => 'Meat',
@@ -609,16 +676,14 @@ class SaleController extends Controller
         return $labels[$type] ?? ucfirst(str_replace('_', ' ', $type));
     }
 
-    /**
-     * Unit label for a sale product type.
-     */
     private function saleTypeUnit(string $type): string
     {
         $units = [
             'eggs_tray'      => 'trays',
             'eggs_crate'     => 'crates',
             'eggs_box'       => 'boxes',
-            'eggs'           => 'eggs',
+            'eggs'           => 'pieces',
+            'milk'           => 'litres',
             'live_bird'      => 'birds',
             'meat_kg'        => 'kg',
             'meat'           => 'kg',
